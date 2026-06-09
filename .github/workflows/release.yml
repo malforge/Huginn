@@ -1,0 +1,235 @@
+name: release
+
+on:
+  push:
+    branches: [main, prerelease]
+    paths:
+      - 'Huginn/PackageVersion.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.value }}
+      isPrerelease: ${{ steps.read.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read version and validate against branch
+        id: read
+        shell: bash
+        run: |
+          VERSION=$(cat Huginn/PackageVersion.txt | tr -d '\r' | tr -d '\n' | xargs)
+          echo "Version: $VERSION"
+
+          if [[ "$VERSION" == *"-"* ]]; then
+            HAS_SUFFIX=true
+          else
+            HAS_SUFFIX=false
+          fi
+
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          if [ "$BRANCH" = "main" ] && [ "$HAS_SUFFIX" = "true" ]; then
+            echo "ERROR: main branch must not have a prerelease suffix (got '$VERSION')"
+            exit 1
+          fi
+          if [ "$BRANCH" = "prerelease" ] && [ "$HAS_SUFFIX" = "false" ]; then
+            echo "ERROR: prerelease branch requires a suffix (got '$VERSION')"
+            exit 1
+          fi
+
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$HAS_SUFFIX" >> "$GITHUB_OUTPUT"
+
+  pack:
+    needs: validate-version
+    name: Pack ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            framework: net10.0-windows10.0.17763.0
+            mainExe: Huginn.exe
+            iconPath: Huginn/Assets/Huginn.ico
+            extraVpkArgs: ''
+          - os: macos-latest
+            rid: osx-arm64
+            framework: net10.0
+            mainExe: Huginn
+            iconPath: icon.icns
+            extraVpkArgs: --bundleId com.malforge.huginn --channel osx-arm64
+          - os: macos-latest
+            rid: osx-x64
+            framework: net10.0
+            mainExe: Huginn
+            iconPath: icon.icns
+            extraVpkArgs: --bundleId com.malforge.huginn --channel osx-x64
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Velopack CLI
+        shell: bash
+        run: dotnet tool install --global vpk
+
+      # macOS bundles want an .icns file. Build an iconset directory from the
+      # PNG and use iconutil to produce the icns — works at any source size.
+      # When the icon gets redesigned, drop a higher-resolution PNG into
+      # Huginn/Assets/ (1024x1024 ideal) and this step produces a crisp icns.
+      # `sips` and `iconutil` are preinstalled on macOS runners.
+      - name: Generate macOS .icns from PNG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -e
+          src=Huginn/Assets/Huginn.png
+          mkdir -p icon.iconset
+          sips -z 16   16   "$src" --out icon.iconset/icon_16x16.png
+          sips -z 32   32   "$src" --out icon.iconset/icon_16x16@2x.png
+          sips -z 32   32   "$src" --out icon.iconset/icon_32x32.png
+          sips -z 64   64   "$src" --out icon.iconset/icon_32x32@2x.png
+          sips -z 128  128  "$src" --out icon.iconset/icon_128x128.png
+          sips -z 256  256  "$src" --out icon.iconset/icon_128x128@2x.png
+          sips -z 256  256  "$src" --out icon.iconset/icon_256x256.png
+          sips -z 512  512  "$src" --out icon.iconset/icon_256x256@2x.png
+          sips -z 512  512  "$src" --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 "$src" --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o icon.icns
+
+      - name: Publish
+        shell: bash
+        run: |
+          dotnet publish Huginn/Huginn.csproj \
+            -c Release \
+            -f ${{ matrix.framework }} \
+            -r ${{ matrix.rid }} \
+            --self-contained \
+            -p:PublishSingleFile=true \
+            -o publish
+
+      - name: vpk pack
+        shell: bash
+        run: |
+          vpk pack \
+            --packId Huginn \
+            --packVersion ${{ needs.validate-version.outputs.version }} \
+            --packDir publish \
+            --mainExe ${{ matrix.mainExe }} \
+            --packTitle "Huginn" \
+            --packAuthors "Morten Aune Lyrstad" \
+            --runtime ${{ matrix.rid }} \
+            --icon ${{ matrix.iconPath }} \
+            ${{ matrix.extraVpkArgs }}
+
+      - name: Upload pack artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: pack-${{ matrix.rid }}
+          if-no-files-found: error
+          retention-days: 7
+          path: Releases/*
+
+  release:
+    needs: [validate-version, pack]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compose release body
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+          IS_PRERELEASE="${{ needs.validate-version.outputs.isPrerelease }}"
+
+          # State-machine extraction: print lines after the "v.<VERSION>" header
+          # and before the next "v.<anything>" header. Tolerant of CRLF endings.
+          # Avoids awk's range-pattern gotcha (range collapses to a single line
+          # when both endpoint patterns happen to match the same line, which
+          # happens when ReleaseNotes.txt only has one version entry).
+          NOTES=$(awk -v ver="$VERSION" '
+            { sub(/\r$/, "") }
+            $0 == "v." ver { found=1; next }
+            found && /^v\./ { exit }
+            found { print }
+          ' Huginn/ReleaseNotes.txt)
+
+          echo "::group::Extracted release notes for v$VERSION"
+          echo "$NOTES"
+          echo "::endgroup::"
+
+          if [ -z "$NOTES" ]; then
+            NOTES="No release notes provided for v$VERSION."
+          fi
+
+          INSTALL_GUIDE=$(cat <<'EOF'
+          ## First time installing?
+
+          Huginn is an open-source personal project and isn't code-signed. Windows SmartScreen and macOS Gatekeeper will both show a warning on first install — **that's expected**. Code-signing certificates cost real money and aren't worth it for a free personal tool. The source is public on this repo; you can read it.
+
+          **Windows**
+
+          1. Download `Huginn-win-Setup.exe` below.
+          2. Run it. SmartScreen will warn that the app is from an unknown publisher.
+          3. Click **More info**, then **Run anyway**.
+
+          **macOS**
+
+          1. Download the `.pkg` for your Mac: `Huginn-osx-arm64-Setup.pkg` (Apple Silicon — M1/M2/M3/M4) or `Huginn-osx-x64-Setup.pkg` (Intel). Not sure? Apple menu → About This Mac → the **Chip**/**Processor** line.
+          2. Open it. macOS will block it because it isn't signed — that's expected. In the warning, click **Done** (or **Cancel**) — **not "Move to Trash"**, which deletes the installer you just downloaded.
+          3. Open **System Settings → Privacy & Security**, scroll to the **Security** section, and click **Open Anyway** next to the note about Huginn being blocked. Authenticate, confirm **Open**, then follow the installer.
+
+          Once installed, future updates download and apply themselves the next time you launch the app — you don't need to repeat any of this.
+
+          ---
+          EOF
+          )
+
+          PRERELEASE_WARNING=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            PRERELEASE_WARNING=$'\n> **Pre-release notice:** this is a pre-release build intended for testing. It may contain bugs or incomplete features. Please report anything weird.\n'
+          fi
+
+          BODY="${INSTALL_GUIDE}${PRERELEASE_WARNING}
+
+          ## What's new
+
+          ${NOTES}"
+
+          {
+            echo "value<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download all pack artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: releases
+          pattern: pack-*
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ needs.validate-version.outputs.version }}
+          name: Huginn v${{ needs.validate-version.outputs.version }}
+          body: ${{ steps.notes.outputs.value }}
+          prerelease: ${{ needs.validate-version.outputs.isPrerelease == 'true' }}
+          target_commitish: ${{ github.sha }}
+          files: releases/*

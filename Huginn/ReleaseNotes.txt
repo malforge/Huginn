@@ -1,0 +1,2 @@
+v.0.1.0
+   - First public release. Huginn moves from an internal ADO repo to a public GitHub repo at github.com/malforge/Huginn; the app itself continues to monitor Azure DevOps for pull requests and pipeline builds. Velopack-driven auto-update against GitHub Releases replaces the previous "open the repo to update" link.

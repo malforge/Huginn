@@ -1,0 +1,45 @@
+# Build output
+bin/
+obj/
+publish/
+out/
+deploy/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.vsidx
+
+# Rider / JetBrains
+.idea/
+*.iml
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and temp
+*.log
+*.tmp
+
+# NuGet
+*.nupkg
+.nuget/
+
+# Local state
+*.local.json
+
+# Claude Code (per-machine permissions, never commit)
+.claude/settings.local.json
+
+# Velopack output (release artifacts live in GitHub Releases, not the repo)
+Releases/

@@ -1,0 +1,99 @@
+name: version-guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'Huginn/**'
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    name: Validate version + release notes
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get base SHA
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          echo "BASE_SHA=$(git rev-parse origin/${{ github.base_ref }})" >> "$GITHUB_ENV"
+
+      - name: Check version + release-notes bumps
+        shell: pwsh
+        run: |
+          $baseSha = $env:BASE_SHA
+          $headSha = "${{ github.sha }}"
+          Write-Host "Comparing $baseSha...$headSha"
+
+          $changedFiles = git diff --name-only $baseSha $headSha
+
+          $packageFolders = Get-ChildItem -Path "." -Filter "PackageVersion.txt" -Recurse |
+            ForEach-Object { $_.DirectoryName }
+
+          $errors = @()
+
+          foreach ($folder in $packageFolders) {
+            $relativePath = $folder -replace [regex]::Escape($PWD.Path + [IO.Path]::DirectorySeparatorChar), ""
+            $relativePath = $relativePath -replace '\\', '/'
+
+            Write-Host "`nChecking folder: $relativePath"
+
+            $folderChanges = $changedFiles | Where-Object {
+              $_ -like "$relativePath/*" -and
+              $_ -notlike "*/PackageVersion.txt" -and
+              $_ -notlike "*/ReleaseNotes.txt"
+            }
+
+            if (-not $folderChanges) {
+              Write-Host "  No code changes in this folder, skipping"
+              continue
+            }
+
+            Write-Host "  Found code changes:"
+            $folderChanges | ForEach-Object { Write-Host "    - $_" }
+
+            $versionFile = "$relativePath/PackageVersion.txt"
+            $versionChanged = $changedFiles -contains $versionFile
+
+            if (-not $versionChanged) {
+              $errors += "Files changed in $relativePath but PackageVersion.txt was not updated"
+              continue
+            }
+            Write-Host "  PackageVersion.txt was updated"
+
+            $newVersion = (Get-Content "$folder/PackageVersion.txt").Trim()
+            Write-Host "  New version: $newVersion"
+
+            $releaseNotesFile = Join-Path $folder "ReleaseNotes.txt"
+            if (Test-Path $releaseNotesFile) {
+              $notesChanged = $changedFiles -contains "$relativePath/ReleaseNotes.txt"
+              if (-not $notesChanged) {
+                $errors += "PackageVersion.txt changed in $relativePath but ReleaseNotes.txt was not updated"
+                continue
+              }
+
+              $notes = Get-Content $releaseNotesFile -Raw
+              if ($notes -notmatch "v\.$([regex]::Escape($newVersion))") {
+                $errors += "Version $newVersion not found in ReleaseNotes.txt for $relativePath"
+                continue
+              }
+              Write-Host "  ReleaseNotes.txt updated with v.$newVersion"
+            }
+            else {
+              Write-Host "  (no ReleaseNotes.txt in this folder)"
+            }
+          }
+
+          if ($errors.Count -gt 0) {
+            Write-Host "`nVERSION GUARD FAILURES:" -ForegroundColor Red
+            $errors | ForEach-Object { Write-Host " - $_" -ForegroundColor Red }
+            Write-Host "`nWhen you change code in a folder with PackageVersion.txt:"
+            Write-Host "  1. Bump PackageVersion.txt"
+            Write-Host "  2. Add a 'v.<newVersion>' section at the top of ReleaseNotes.txt"
+            exit 1
+          }
+
+          Write-Host "`nAll version checks passed."
