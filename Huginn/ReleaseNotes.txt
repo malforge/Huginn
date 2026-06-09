@@ -1,3 +1,8 @@
+v.1.2.0
+   - Bumped System.Drawing.Common from the transitive 4.7.0 to 9.0.0, clearing the GHSA-rxg9-xrhp-64gj critical-severity advisory that the release builds were flagging.
+   - Rooted the Windows toast-notification dependency chain (Microsoft.Toolkit.Uwp.Notifications, Microsoft.Windows.SDK.NET, WinRT.Runtime) so the trimmer no longer strips reflection-only members on best-guess heuristics. The current call sites worked in practice, but any new toast template or WinRT activation path is now safe by construction rather than by luck.
+   - Cleaned up the trim warnings the release builds had been logging: removed an unused Avalonia-template stub (DisableAvaloniaDataAnnotationValidation) Huginn never needed; the runtime platform dispatcher's [DynamicDependency] hints are now guarded so each TFM only references types that actually exist in it; the remaining safe-but-unprovable Type.GetType(string) calls in the dispatcher and the view locator carry explicit [UnconditionalSuppressMessage] justifications. The three IL2104 warnings from the rooted Windows toast/WinRT assemblies stay visible on purpose so a new noisy dependency wouldn't be silently swallowed.
+
 v.1.1.0
    - New: Updates section in Settings shows the running version, lets you trigger a manual update check, and displays the release notes for the next version once it has been downloaded. A "Restart now" button appears alongside the notes so you can apply the update on demand instead of waiting for the next launch.
    - The toolbar "Update available" button now lives next to a much more discoverable Settings home for the same actions.

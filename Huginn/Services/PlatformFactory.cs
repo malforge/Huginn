@@ -11,8 +11,11 @@ namespace Huginn.Services;
 /// </summary>
 public static class PlatformFactory
 {
+#if WINDOWS
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, "Huginn.Services.TaskbarBadgeService", "Huginn")]
+#else
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, "Huginn.Services.DockBadgeService", "Huginn")]
+#endif
     public static IBadgeService CreateBadgeService()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -22,8 +25,11 @@ public static class PlatformFactory
         return new NullBadgeService();
     }
 
+#if WINDOWS
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, "Huginn.Services.WinToastService", "Huginn")]
+#else
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, "Huginn.Services.MacNotificationService", "Huginn")]
+#endif
     public static INotificationService CreateNotificationService()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -33,8 +39,11 @@ public static class PlatformFactory
         return new NullNotificationService();
     }
 
+#if WINDOWS
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, "Huginn.Services.WinCredentialStore", "Huginn")]
+#else
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, "Huginn.Services.KeychainCredentialStore", "Huginn")]
+#endif
     public static ICredentialStore CreateCredentialStore()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -44,8 +53,11 @@ public static class PlatformFactory
         return new FileCredentialStore();
     }
 
+#if WINDOWS
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, "Huginn.Services.WinAutoStartService", "Huginn")]
+#else
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, "Huginn.Services.MacAutoStartService", "Huginn")]
+#endif
     public static IAutoStartService CreateAutoStartService()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -55,6 +67,8 @@ public static class PlatformFactory
         return new NullAutoStartService();
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2057",
+        Justification = "Each caller's [DynamicDependency] attributes preserve the exact types this lookup resolves; the trimmer just can't see the connection through a Type.GetType(string) call.")]
     private static T Create<T>(string typeName)
     {
         var type = Type.GetType(typeName)
