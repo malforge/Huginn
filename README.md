@@ -22,8 +22,9 @@ Built on [Avalonia](https://avaloniaui.net/) and .NET 10.
 - **Launch at login** — Windows registry `Run` key on Windows, LaunchAgent on
   macOS.
 - **Auto-update** via [Velopack](https://velopack.io) against GitHub
-  Releases. Checks happen at startup; new versions download in the background
-  and apply on next launch.
+  Releases. Checks at startup and every 30 minutes thereafter; new versions
+  download in the background and apply on next launch — or you can install
+  immediately from the **Updates** section in Settings.
 
 ## Installing
 

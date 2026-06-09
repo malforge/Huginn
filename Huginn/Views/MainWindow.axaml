@@ -145,6 +145,46 @@
                     <TextBlock Text="Launch Huginn at login" TextWrapping="Wrap"/>
                 </CheckBox>
 
+                <!-- ═══ Updates ═══ -->
+                <Separator Margin="0,12"/>
+                <TextBlock Text="Updates" FontSize="16" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
+
+                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Running version" FontSize="12" Opacity="0.7"/>
+                        <TextBlock Text="{Binding CurrentVersionText}" FontSize="14" FontWeight="SemiBold"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Command="{Binding CheckForUpdatesCommand}"
+                            IsEnabled="{Binding CanCheckForUpdates}"
+                            Content="Check for updates" VerticalAlignment="Center"/>
+                </Grid>
+
+                <Border Background="{DynamicResource SystemAltHighColor}"
+                        CornerRadius="6" Padding="12" Margin="0,8,0,0">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding UpdateStatusLabel}" FontSize="12" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding UpdateStatusText}" FontSize="12" Opacity="0.85" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <Border IsVisible="{Binding UpdateAvailable}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                        CornerRadius="6" Padding="12" Margin="0,8,0,0" MaxHeight="240">
+                    <Grid RowDefinitions="Auto,*">
+                        <TextBlock Grid.Row="0" Text="What's new" FontSize="12" FontWeight="SemiBold" Opacity="0.7" Margin="0,0,0,6"/>
+                        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                            <TextBlock Text="{Binding ReleaseNotesText}" FontSize="12" TextWrapping="Wrap"
+                                       FontFamily="Consolas,Menlo,monospace"/>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+
+                <Button IsVisible="{Binding UpdateAvailable}"
+                        Command="{Binding RestartNowCommand}"
+                        Content="Install update and restart now" Classes="accent"
+                        HorizontalAlignment="Center" Margin="0,8,0,0"/>
+
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12" Margin="0,12,0,0">
                     <Button Command="{Binding TestConnectionCommand}"
                             Content="Test Connection" IsEnabled="{Binding !IsTesting}"/>

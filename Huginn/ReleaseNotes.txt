@@ -1,3 +1,7 @@
+v.1.1.0
+   - New: Updates section in Settings shows the running version, lets you trigger a manual update check, and displays the release notes for the next version once it has been downloaded. A "Restart now" button appears alongside the notes so you can apply the update on demand instead of waiting for the next launch.
+   - The toolbar "Update available" button now lives next to a much more discoverable Settings home for the same actions.
+
 v.1.0.0
    - First stable release. Velopack auto-update is now wired end-to-end: the app polls GitHub Releases every 30 minutes, downloads new versions in the background, and applies them on next launch. The toolbar "Update available" button is a one-click install-and-restart that shuts Avalonia down gracefully so settings persist across the patch.
    - Retired the legacy update check that compared the embedded build timestamp against the ADO repo's latest commit — Velopack replaces it entirely.

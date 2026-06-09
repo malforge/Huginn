@@ -103,9 +103,54 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void OnUpdateServicePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(UpdateService.State))
-            UpdateAvailable = UpdateService.Instance.State == UpdateState.UpdateReady;
+        // Every property on UpdateService can shift one or more of the derived
+        // labels below, so just re-raise the lot rather than tracking which
+        // depends on which.
+        UpdateAvailable = UpdateService.Instance.State == UpdateState.UpdateReady;
+        OnPropertyChanged(nameof(CurrentVersionText));
+        OnPropertyChanged(nameof(UpdateStatusLabel));
+        OnPropertyChanged(nameof(UpdateStatusText));
+        OnPropertyChanged(nameof(CanCheckForUpdates));
+        OnPropertyChanged(nameof(ReleaseNotesText));
     }
+
+    public string CurrentVersionText => $"v{UpdateService.Instance.CurrentVersion}";
+
+    public string UpdateStatusLabel => UpdateService.Instance.State switch
+    {
+        UpdateState.UpdateReady => $"Update ready: v{UpdateService.Instance.AvailableVersion}",
+        UpdateState.Checking => "Checking for updates…",
+        UpdateState.Failed => "Update check failed",
+        UpdateState.UpToDate => "Up to date",
+        _ => "Updates",
+    };
+
+    public string UpdateStatusText
+    {
+        get
+        {
+            if (!UpdateService.Instance.CanUpdate)
+                return "Auto-update is only active in installed builds — this is a dev/local-publish build, so updates won't apply here. Install from a GitHub Release to enable.";
+            return UpdateService.Instance.State switch
+            {
+                UpdateState.Idle => "Huginn checks for new versions on launch and every 30 minutes thereafter.",
+                UpdateState.Checking => "Talking to GitHub…",
+                UpdateState.UpToDate => "You're on the latest version. Huginn rechecks every 30 minutes.",
+                UpdateState.UpdateReady => $"v{UpdateService.Instance.AvailableVersion} has been downloaded and will install the next time you launch Huginn — or click Restart now to do it immediately.",
+                UpdateState.Failed => UpdateService.Instance.ErrorMessage ?? "Last check failed. Will retry on the next interval.",
+                _ => string.Empty,
+            };
+        }
+    }
+
+    public bool CanCheckForUpdates =>
+        UpdateService.Instance.CanUpdate && UpdateService.Instance.State != UpdateState.Checking;
+
+    public string ReleaseNotesText =>
+        UpdateService.Instance.ReleaseNotesMarkdown ?? "Loading release notes…";
+
+    [RelayCommand]
+    private Task CheckForUpdates() => UpdateService.Instance.CheckAsync();
 
     /// <summary>
     /// Called from the view once the window HWND is available.
