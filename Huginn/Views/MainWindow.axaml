@@ -21,11 +21,11 @@
                 <TextBlock Text="Monitor" FontSize="14" Opacity="0.6"
                            VerticalAlignment="Center"/>
 
-                <Button Grid.Column="1" Command="{Binding OpenUpdatePageCommand}"
+                <Button Grid.Column="1" Command="{Binding RestartNowCommand}"
                         IsVisible="{Binding UpdateAvailable}"
                         Margin="0,0,8,0" Padding="8,4" CornerRadius="4"
                         Background="#443399FF" BorderBrush="#883399FF" BorderThickness="1"
-                        Cursor="Hand" ToolTip.Tip="A newer version has been pushed to the repo. Run install.ps1 to update.">
+                        Cursor="Hand" ToolTip.Tip="A new version is downloaded and ready. Click to install and restart.">
                     <TextBlock Text="Update available" FontSize="12" Foreground="#FF66AAFF"/>
                 </Button>
 

@@ -1,2 +1,6 @@
+v.1.0.0
+   - First stable release. Velopack auto-update is now wired end-to-end: the app polls GitHub Releases every 30 minutes, downloads new versions in the background, and applies them on next launch. The toolbar "Update available" button is a one-click install-and-restart that shuts Avalonia down gracefully so settings persist across the patch.
+   - Retired the legacy update check that compared the embedded build timestamp against the ADO repo's latest commit — Velopack replaces it entirely.
+
 v.0.1.0
    - First public release. Huginn moves from an internal ADO repo to a public GitHub repo at github.com/malforge/Huginn; the app itself continues to monitor Azure DevOps for pull requests and pipeline builds. Velopack-driven auto-update against GitHub Releases replaces the previous "open the repo to update" link.

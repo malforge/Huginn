@@ -21,17 +21,11 @@ public sealed class PollingService : IDisposable
     private readonly BuildMonitor _buildMonitor = new();
     private readonly SemaphoreSlim _pollLock = new(1, 1);
 
-    private DateTimeOffset _lastUpdateCheck = DateTimeOffset.MinValue;
-    private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromMinutes(30);
-    private const string HuginnProject = "PowerOfficeGo";
-    private const string HuginnRepo = "HuginnMonitor";
-
     public event Action<PollResult>? PollCompleted;
     public event Action<PullRequestItem>? NewPullRequestDetected;
     public event Action<BuildItem>? NewBuildFailureDetected;
     public event Action<string>? StatusChanged;
     public event Action<string>? ErrorOccurred;
-    public event Action<bool>? UpdateCheckCompleted;
 
     public PollingService(AppSettings settings)
     {
@@ -134,9 +128,6 @@ public sealed class PollingService : IDisposable
             if (buildPart != "all clear")
                 combined = combined == "all clear" ? buildPart : $"{combined}, {buildPart}";
             StatusChanged?.Invoke($"Last updated: {DateTime.Now:HH:mm}  ·  {combined}");
-
-            // Self-update check (piggyback on poll, but only every ~30 min)
-            await CheckForUpdateAsync(ct);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -165,41 +156,6 @@ public sealed class PollingService : IDisposable
             {
                 ErrorOccurred?.Invoke($"Poll error: {ex.Message}");
             }
-        }
-    }
-
-    private async Task CheckForUpdateAsync(CancellationToken ct)
-    {
-        if (_client == null) return;
-
-        var now = DateTimeOffset.UtcNow;
-        if (now - _lastUpdateCheck < UpdateCheckInterval) return;
-        _lastUpdateCheck = now;
-
-        try
-        {
-            var buildDate = BuildInfo.BuildDate;
-            if (buildDate == DateTimeOffset.MinValue)
-            {
-                Log.Info("Update check: no build timestamp embedded, skipping");
-                return;
-            }
-
-            var latestCommit = await _client.GetLatestCommitDateAsync(HuginnProject, HuginnRepo, ct);
-            if (latestCommit == null)
-            {
-                Log.Info("Update check: could not fetch latest commit date");
-                return;
-            }
-
-            var isNewer = latestCommit.Value > buildDate.AddMinutes(2); // small buffer for build time
-            Log.Info($"Update check: build={buildDate:u}, latest commit={latestCommit:u}, newer={isNewer}");
-            UpdateCheckCompleted?.Invoke(isNewer);
-        }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex)
-        {
-            Log.Error($"Update check failed: {ex.Message}");
         }
     }
 

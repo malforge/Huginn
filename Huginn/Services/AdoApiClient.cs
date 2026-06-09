@@ -427,39 +427,5 @@ public sealed class AdoApiClient : IDisposable
         return items;
     }
 
-    // ── Self-update detection ──────────────────────────────────────────
-
-    /// <summary>
-    /// Gets the date of the most recent commit on the main branch of a repo.
-    /// Used for self-update detection against the embedded build timestamp.
-    /// </summary>
-    public async Task<DateTimeOffset?> GetLatestCommitDateAsync(string project, string repoName, CancellationToken ct = default)
-    {
-        try
-        {
-            var url = $"https://dev.azure.com/{Uri.EscapeDataString(_org)}/{Uri.EscapeDataString(project)}"
-                      + $"/_apis/git/repositories/{Uri.EscapeDataString(repoName)}/commits"
-                      + "?searchCriteria.$top=1&searchCriteria.itemVersion.version=main&api-version=7.0";
-            Log.Info($"GET {url}");
-            var resp = await _http.GetAsync(url, ct);
-            Log.Info($"  -> {(int)resp.StatusCode} {resp.ReasonPhrase}");
-            if (!resp.IsSuccessStatusCode) return null;
-
-            using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var commits = doc.RootElement.GetProperty("value");
-            if (commits.GetArrayLength() == 0) return null;
-
-            var dateStr = commits[0].GetProperty("committer").GetProperty("date").GetString();
-            Log.Info($"  Latest commit: {dateStr}");
-            return DateTimeOffset.TryParse(dateStr, out var dt) ? dt : null;
-        }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex)
-        {
-            Log.Error($"GetLatestCommitDate: {ex.Message}");
-            return null;
-        }
-    }
-
     public void Dispose() => _http.Dispose();
 }

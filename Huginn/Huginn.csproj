@@ -70,6 +70,7 @@
             <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
         </PackageReference>
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+        <PackageReference Include="Velopack" Version="0.0.1298" />
     </ItemGroup>
 
     <!-- Windows-only NuGet packages -->
@@ -77,16 +78,4 @@
         <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
     </ItemGroup>
 
-    <!-- Stamp the UTC build time into assembly metadata.
-         Used by the existing ADO commit-date update check; will be retired in
-         phase 3 when Velopack takes over auto-update. -->
-    <PropertyGroup>
-        <_BuildTimestamp>$([System.DateTime]::UtcNow.ToString("o"))</_BuildTimestamp>
-    </PropertyGroup>
-    <ItemGroup>
-        <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-            <_Parameter1>BuildTimestamp</_Parameter1>
-            <_Parameter2>$(_BuildTimestamp)</_Parameter2>
-        </AssemblyAttribute>
-    </ItemGroup>
 </Project>

@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Huginn.Models;
 using Huginn.Services;
+using Huginn.Services.Updates;
 
 namespace Huginn.ViewModels;
 
@@ -91,10 +92,19 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         MonitorMyBuilds = _settings.MonitorMyBuilds;
         AutoStartEnabled = _autoStart.IsEnabled;
 
+        UpdateService.Instance.PropertyChanged += OnUpdateServicePropertyChanged;
+        UpdateService.Instance.StartPolling();
+
         if (_settings.IsConfigured)
             _ = ConnectAsync();
         else
             IsSettingsVisible = true;
+    }
+
+    private void OnUpdateServicePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(UpdateService.State))
+            UpdateAvailable = UpdateService.Instance.State == UpdateState.UpdateReady;
     }
 
     /// <summary>
@@ -447,7 +457,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.NewBuildFailureDetected += OnNewBuildFailureDetected;
         _poller.StatusChanged += OnStatusChanged;
         _poller.ErrorOccurred += OnErrorOccurred;
-        _poller.UpdateCheckCompleted += OnUpdateCheckCompleted;
 
         var ok = await _poller.StartAsync();
         IsConnected = ok;
@@ -482,20 +491,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _ = LoadPipelinesAsync();
     }
 
-    private void OnUpdateCheckCompleted(bool updateAvailable)
-        => Dispatcher.UIThread.Post(() => UpdateAvailable = updateAvailable);
-
-    [RelayCommand]
-    private void OpenUpdatePage()
-    {
-        try
-        {
-            var org = _settings.Organization;
-            var url = $"https://dev.azure.com/{Uri.EscapeDataString(org)}/PowerOfficeGo/_git/HuginnMonitor";
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch { }
-    }
+[RelayCommand]
+    private void RestartNow() => UpdateService.Instance.ApplyAndRestart();
 
     private void UnsubscribePollerEvents()
     {
@@ -505,11 +502,11 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.NewBuildFailureDetected -= OnNewBuildFailureDetected;
         _poller.StatusChanged -= OnStatusChanged;
         _poller.ErrorOccurred -= OnErrorOccurred;
-        _poller.UpdateCheckCompleted -= OnUpdateCheckCompleted;
     }
 
     public void Dispose()
     {
+        UpdateService.Instance.PropertyChanged -= OnUpdateServicePropertyChanged;
         UnsubscribePollerEvents();
         _poller?.Dispose();
         _badge?.Dispose();
