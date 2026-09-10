@@ -40,6 +40,18 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     public ObservableCollection<PullRequestItem> AcknowledgedPrs { get; } = [];
     public ObservableCollection<BuildItem> AcknowledgedBuilds { get; } = [];
 
+    /// <summary>Health of every source, in the order they appear in settings.</summary>
+    public ObservableCollection<ConnectionStatus> Connections { get; } = [];
+
+    public ConnectionStatus AdoStatus { get; } =
+        new() { Kind = ConnectionKind.AzureDevOps, Title = "Azure DevOps" };
+
+    public ConnectionStatus SentryStatus { get; } =
+        new() { Kind = ConnectionKind.Sentry, Title = "Sentry" };
+
+    public ConnectionStatus AppInsightsStatus { get; } =
+        new() { Kind = ConnectionKind.AppInsights, Title = "Application Insights" };
+
     [ObservableProperty] private string _statusText = "Not connected";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasConnectionError))]
@@ -67,6 +79,11 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _project = "";
     [ObservableProperty] private string _pat = "";
     [ObservableProperty] private string _testConnectionResult = "";
+    [ObservableProperty] private string _sentryOrganization = "";
+    [ObservableProperty] private string _sentryToken = "";
+    [ObservableProperty] private bool _isAdoExpanded;
+    [ObservableProperty] private bool _isSentryExpanded;
+    [ObservableProperty] private bool _isAppInsightsExpanded;
     [ObservableProperty] private bool _isTesting;
     [ObservableProperty] private bool _monitorMyBuilds;
     [ObservableProperty] private bool _autoStartEnabled;
@@ -90,16 +107,34 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         Organization = _settings.Organization;
         Project = _settings.Project;
         Pat = _settings.GetPat() ?? "";
+        SentryOrganization = _settings.SentryOrganization;
+        SentryToken = _settings.GetSentryToken() ?? "";
         MonitorMyBuilds = _settings.MonitorMyBuilds;
         AutoStartEnabled = _autoStart.IsEnabled;
 
         UpdateService.Instance.PropertyChanged += OnUpdateServicePropertyChanged;
         UpdateService.Instance.StartPolling();
 
-        if (_settings.IsConfigured)
+        Connections.Add(AdoStatus);
+        Connections.Add(SentryStatus);
+        Connections.Add(AppInsightsStatus);
+        foreach (var connection in Connections)
+            connection.PropertyChanged += (_, _) => RefreshConnectionBanner();
+
+        if (_settings.IsSentryConfigured)
+            SentryStatus.Set(ConnectionState.Connected, "Configured, not yet polled");
+
+        if (_settings.IsAdoConfigured)
+        {
             _ = ConnectAsync();
+        }
         else
+        {
+            ExpandConnectionsNeedingAttention();
             IsSettingsVisible = true;
+        }
+
+        RefreshConnectionBanner();
     }
 
     private void OnUpdateServicePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -166,8 +201,37 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void ToggleSettings()
     {
         IsSettingsVisible = !IsSettingsVisible;
-        if (IsSettingsVisible)
-            _ = LoadPipelinesAsync();
+        if (!IsSettingsVisible) return;
+        ExpandConnectionsNeedingAttention();
+        _ = LoadPipelinesAsync();
+    }
+
+    /// <summary>
+    /// Opens the connections the user has to act on and collapses the rest, so a healthy setup
+    /// shows one line per source instead of three screens of setup instructions.
+    /// </summary>
+    private void ExpandConnectionsNeedingAttention()
+    {
+        IsAdoExpanded = AdoStatus.NeedsAttention;
+        IsSentryExpanded = SentryStatus.NeedsAttention;
+        IsAppInsightsExpanded = AppInsightsStatus.NeedsAttention;
+    }
+
+    /// <summary>
+    /// Collapses every unhealthy connection into the single banner slot. Naming at most two keeps
+    /// the header a fixed height whatever the number of sources.
+    /// </summary>
+    private void RefreshConnectionBanner()
+    {
+        var unhealthy = Connections.Where(c => c.NeedsAttention).ToList();
+        ConnectionError = unhealthy.Count switch
+        {
+            0 => null,
+            1 => $"{unhealthy[0].Title}: {unhealthy[0].StateText}.",
+            2 => $"{unhealthy[0].Title}: {unhealthy[0].StateText}. "
+               + $"{unhealthy[1].Title}: {unhealthy[1].StateText}.",
+            _ => $"{unhealthy.Count} connections need attention.",
+        };
     }
 
     partial void OnPipelineFilterChanged(string value) => ApplyPipelineFilter();
@@ -238,6 +302,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         _settings.Organization = Organization.Trim();
         _settings.Project = Project.Trim();
+        _settings.SentryOrganization = SentryOrganization.Trim();
         _settings.MonitorMyBuilds = MonitorMyBuilds;
         _settings.WatchedPipelineIds = AvailablePipelines
             .Where(p => p.IsSelected).Select(p => p.Id).ToList();
@@ -245,6 +310,13 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (!string.IsNullOrWhiteSpace(Pat))
             _settings.SetPat(Pat.Trim());
+
+        if (!string.IsNullOrWhiteSpace(SentryToken))
+            _settings.SetSentryToken(SentryToken.Trim());
+
+        SentryStatus.Set(
+            _settings.IsSentryConfigured ? ConnectionState.Connected : ConnectionState.NotConfigured,
+            _settings.IsSentryConfigured ? "Configured, not yet polled" : "");
 
         IsSettingsVisible = false;
         await ConnectAsync();
@@ -510,8 +582,14 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.StatusChanged += OnStatusChanged;
         _poller.ErrorOccurred += OnErrorOccurred;
 
+        AdoStatus.Set(ConnectionState.Connecting);
+
         var ok = await _poller.StartAsync();
         IsConnected = ok;
+
+        // A failure has already been reported through ErrorOccurred and set the state by now,
+        // so only the success edge is left to record here.
+        if (ok) AdoStatus.Set(ConnectionState.Connected);
     }
 
     private void OnPollCompleted(PollResult result)
@@ -532,7 +610,11 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         => Dispatcher.UIThread.Post(() =>
         {
             StatusText = $"⚠ {msg}";
-            ConnectionError = msg;
+            AdoStatus.Set(
+                msg.Contains("auth", StringComparison.OrdinalIgnoreCase) || msg.Contains("PAT", StringComparison.Ordinal)
+                    ? ConnectionState.AuthFailed
+                    : ConnectionState.Error,
+                msg);
             IsConnected = false;
         });
 
@@ -540,7 +622,19 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OpenSettings()
     {
         IsSettingsVisible = true;
+        ExpandConnectionsNeedingAttention();
         _ = LoadPipelinesAsync();
+    }
+
+    [RelayCommand]
+    private void OpenSentryTokenPage()
+    {
+        try
+        {
+            _settings.SentryOrganization = SentryOrganization?.Trim() ?? "";
+            Process.Start(new ProcessStartInfo(_settings.GetSentryTokenPageUrl()) { UseShellExecute = true });
+        }
+        catch { }
     }
 
 [RelayCommand]

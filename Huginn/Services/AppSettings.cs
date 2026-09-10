@@ -14,13 +14,20 @@ public sealed partial class AppSettings
     private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
 
     private const string CredentialTarget = "Huginn:ADO:PAT";
+    private const string SentryCredentialTarget = "Huginn:Sentry:Token";
 
     private readonly ICredentialStore _credentialStore;
     private string? _cachedPat;
+    private string? _cachedSentryToken;
 
     public string Organization { get; set; } = "";
     public string Project { get; set; } = "";
     public int PollIntervalMinutes { get; set; } = 5;
+
+    // Sentry
+    public string SentryOrganization { get; set; } = "";
+    public string SentryRegionUrl { get; set; } = "https://sentry.io";
+    public List<string> WatchedSentryProjects { get; set; } = [];
 
     // Window state (only size/position are recorded when in Normal state)
     public double? WindowX { get; set; }
@@ -43,10 +50,16 @@ public sealed partial class AppSettings
         _credentialStore = credentialStore;
     }
 
-    public bool IsConfigured =>
+    /// <summary>The Azure DevOps connection has everything it needs to attempt a poll.</summary>
+    public bool IsAdoConfigured =>
         !string.IsNullOrWhiteSpace(Organization)
         && !string.IsNullOrWhiteSpace(Project)
         && !string.IsNullOrWhiteSpace(GetPat());
+
+    /// <summary>The Sentry connection has everything it needs to attempt a poll.</summary>
+    public bool IsSentryConfigured =>
+        !string.IsNullOrWhiteSpace(SentryOrganization)
+        && !string.IsNullOrWhiteSpace(GetSentryToken());
 
     public string? GetPat()
     {
@@ -59,6 +72,26 @@ public sealed partial class AppSettings
         _cachedPat = pat;
         return _credentialStore.Set(CredentialTarget, pat, "ADO PAT");
     }
+
+    public string? GetSentryToken()
+    {
+        _cachedSentryToken ??= _credentialStore.Get(SentryCredentialTarget);
+        return _cachedSentryToken;
+    }
+
+    public bool SetSentryToken(string token)
+    {
+        _cachedSentryToken = token;
+        return _credentialStore.Set(SentryCredentialTarget, token, "Sentry token");
+    }
+
+    /// <summary>Base URL of the Sentry API, honouring the organisation data region.</summary>
+    public string GetSentryApiBaseUrl() => $"{SentryRegionUrl.TrimEnd('/')}/api/0";
+
+    public string GetSentryTokenPageUrl() =>
+        string.IsNullOrWhiteSpace(SentryOrganization)
+            ? "https://sentry.io/settings/account/api/auth-tokens/"
+            : $"https://{Uri.EscapeDataString(SentryOrganization)}.sentry.io/settings/account/api/auth-tokens/";
 
     public string GetWebBaseUrl() =>
         $"https://dev.azure.com/{Uri.EscapeDataString(Organization)}/{Uri.EscapeDataString(Project)}";
@@ -112,6 +145,9 @@ public sealed partial class AppSettings
             Organization = Organization,
             Project = Project,
             PollIntervalMinutes = PollIntervalMinutes,
+            SentryOrganization = SentryOrganization,
+            SentryRegionUrl = SentryRegionUrl,
+            WatchedSentryProjects = WatchedSentryProjects,
             WindowX = WindowX,
             WindowY = WindowY,
             WindowWidth = WindowWidth,
@@ -141,6 +177,11 @@ public sealed partial class AppSettings
                 Organization = dto.Organization ?? "",
                 Project = dto.Project ?? "",
                 PollIntervalMinutes = dto.PollIntervalMinutes > 0 ? dto.PollIntervalMinutes : 5,
+                SentryOrganization = dto.SentryOrganization ?? "",
+                SentryRegionUrl = string.IsNullOrWhiteSpace(dto.SentryRegionUrl)
+                    ? "https://sentry.io"
+                    : dto.SentryRegionUrl,
+                WatchedSentryProjects = dto.WatchedSentryProjects ?? [],
                 WindowX = dto.WindowX,
                 WindowY = dto.WindowY,
                 WindowWidth = dto.WindowWidth,
@@ -163,6 +204,9 @@ public sealed partial class AppSettings
         public string? Organization { get; set; }
         public string? Project { get; set; }
         public int PollIntervalMinutes { get; set; }
+        public string? SentryOrganization { get; set; }
+        public string? SentryRegionUrl { get; set; }
+        public List<string>? WatchedSentryProjects { get; set; }
         public double? WindowX { get; set; }
         public double? WindowY { get; set; }
         public double? WindowWidth { get; set; }

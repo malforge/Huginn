@@ -13,6 +13,20 @@
         Width="720" Height="520"
         MinWidth="500" MinHeight="350">
 
+    <Window.Resources>
+        <DataTemplate x:Key="ConnectionHeader" x:DataType="models:ConnectionStatus">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding Glyph}" FontSize="13"
+                           Margin="0,0,8,0" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Text="{Binding StateText}" FontSize="11" Opacity="0.6"
+                           VerticalAlignment="Center" MaxWidth="190" Margin="8,0,0,0"
+                           TextTrimming="CharacterEllipsis"/>
+            </Grid>
+        </DataTemplate>
+    </Window.Resources>
+
     <Grid RowDefinitions="Auto,Auto,*,Auto">
 
         <!-- ═══ TOOLBAR ═══ -->
@@ -59,89 +73,151 @@
         <Border Grid.Row="2" IsVisible="{Binding IsSettingsVisible}" Padding="20"
                 ZIndex="10" Background="{DynamicResource SystemRegionColor}">
             <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <StackPanel MaxWidth="400" HorizontalAlignment="Center" Spacing="12">
-                <TextBlock Text="Azure DevOps Connection" FontSize="16" FontWeight="SemiBold"
-                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
+            <StackPanel MaxWidth="440" HorizontalAlignment="Center" Spacing="8">
 
-                <TextBlock Text="Organization" FontSize="12" Opacity="0.7"/>
-                <TextBox Text="{Binding Organization}" PlaceholderText="e.g. contoso"/>
+                <!-- ─── Connections ─── -->
+                <TextBlock Text="Connections" FontSize="16" FontWeight="SemiBold"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Each source signs in separately. Huginn keeps monitoring whichever ones are connected."
+                           FontSize="11" Opacity="0.5" TextWrapping="Wrap" TextAlignment="Center"
+                           HorizontalAlignment="Center" Margin="0,0,0,4"/>
 
-                <TextBlock Text="Project" FontSize="12" Opacity="0.7"/>
-                <TextBox Text="{Binding Project}" PlaceholderText="e.g. fabrikam"/>
+                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                          IsExpanded="{Binding IsAdoExpanded}"
+                          Header="{Binding AdoStatus}"
+                          HeaderTemplate="{StaticResource ConnectionHeader}">
+                    <StackPanel Spacing="8" Margin="0,8,0,0">
+                        <TextBlock Text="Organization" FontSize="12" Opacity="0.7"/>
+                        <TextBox Text="{Binding Organization}" PlaceholderText="e.g. contoso"/>
 
-                <TextBlock Text="Personal Access Token" FontSize="12" Opacity="0.7"/>
-                <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12" Margin="0,0,0,4">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="How to create a PAT:" FontSize="12" FontWeight="SemiBold"/>
-                        <StackPanel Orientation="Horizontal" Spacing="0">
-                            <TextBlock FontSize="12" Text="1. "/>
-                            <Button Command="{Binding OpenPatPageCommand}"
-                                    Padding="0" Margin="0" MinHeight="0" MinWidth="0"
-                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
-                                    IsEnabled="{Binding Organization, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                                    ToolTip.Tip="Enter the Organization name above first">
-                                <TextBlock FontSize="12" Text="Open the token settings page ↗"
-                                           Foreground="#648CB4" TextDecorations="Underline"/>
-                            </Button>
-                        </StackPanel>
-                        <TextBlock FontSize="12" TextWrapping="Wrap" Text="2. Click 'New Token'"/>
-                        <TextBlock FontSize="12" TextWrapping="Wrap" Text="3. Give it a name (e.g. 'Huginn')"/>
-                        <TextBlock FontSize="12" TextWrapping="Wrap" Text="4. Under Scopes, select Code → Read and Build → Read"/>
-                        <TextBlock FontSize="12" TextWrapping="Wrap" Text="5. Click Create and paste the token below"/>
+                        <TextBlock Text="Project" FontSize="12" Opacity="0.7"/>
+                        <TextBox Text="{Binding Project}" PlaceholderText="e.g. fabrikam"/>
+
+                        <TextBlock Text="Personal Access Token" FontSize="12" Opacity="0.7"/>
+                        <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="How to create a PAT:" FontSize="12" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" Spacing="0">
+                                    <TextBlock FontSize="12" Text="1. "/>
+                                    <Button Command="{Binding OpenPatPageCommand}"
+                                            Padding="0" Margin="0" MinHeight="0" MinWidth="0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            IsEnabled="{Binding Organization, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                            ToolTip.Tip="Enter the Organization name above first">
+                                        <TextBlock FontSize="12" Text="Open the token settings page ↗"
+                                                   Foreground="#648CB4" TextDecorations="Underline"/>
+                                    </Button>
+                                </StackPanel>
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="2. Click &apos;New Token&apos;"/>
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="3. Give it a name (e.g. &apos;Huginn&apos;)"/>
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="4. Under Scopes, select Code → Read and Build → Read"/>
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="5. Click Create and paste the token below"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBox Text="{Binding Pat}" PlaceholderText="Paste your PAT here"
+                                 PasswordChar="●" RevealPassword="False"/>
                     </StackPanel>
-                </Border>
-                <TextBox Text="{Binding Pat}" PlaceholderText="Paste your PAT here"
-                         PasswordChar="●" RevealPassword="False"/>
+                </Expander>
 
-                <!-- ═══ Pipeline Monitoring ═══ -->
-                <Separator Margin="0,12"/>
-                <TextBlock Text="Pipeline Monitoring" FontSize="16" FontWeight="SemiBold"
-                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                          IsExpanded="{Binding IsSentryExpanded}"
+                          Header="{Binding SentryStatus}"
+                          HeaderTemplate="{StaticResource ConnectionHeader}">
+                    <StackPanel Spacing="8" Margin="0,8,0,0">
+                        <TextBlock Text="Organization" FontSize="12" Opacity="0.7"/>
+                        <TextBox Text="{Binding SentryOrganization}" PlaceholderText="e.g. contoso-as"/>
 
-                <CheckBox IsChecked="{Binding MonitorMyBuilds}" Margin="0,0,0,4">
+                        <TextBlock Text="Auth token" FontSize="12" Opacity="0.7"/>
+                        <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="How to create a token:" FontSize="12" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" Spacing="0">
+                                    <TextBlock FontSize="12" Text="1. "/>
+                                    <Button Command="{Binding OpenSentryTokenPageCommand}"
+                                            Padding="0" Margin="0" MinHeight="0" MinWidth="0"
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                            IsEnabled="{Binding SentryOrganization, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                            ToolTip.Tip="Enter the Organization name above first">
+                                        <TextBlock FontSize="12" Text="Open the auth tokens page ↗"
+                                                   Foreground="#648CB4" TextDecorations="Underline"/>
+                                    </Button>
+                                </StackPanel>
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="2. Click &apos;Create New Token&apos;"/>
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="3. Give it a name (e.g. &apos;Huginn&apos;)"/>
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="4. Under Scopes, select org:read, project:read and event:read"/>
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="5. Click Create and paste the token below"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBox Text="{Binding SentryToken}" PlaceholderText="Paste your Sentry token here"
+                                 PasswordChar="●" RevealPassword="False"/>
+                    </StackPanel>
+                </Expander>
+
+                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                          IsExpanded="{Binding IsAppInsightsExpanded}"
+                          Header="{Binding AppInsightsStatus}"
+                          HeaderTemplate="{StaticResource ConnectionHeader}">
+                    <StackPanel Spacing="8" Margin="0,8,0,0">
+                        <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12">
+                            <TextBlock FontSize="12" TextWrapping="Wrap"
+                                       Text="Not yet available in this build. This connection signs in with your own Azure account, once per environment, so it shows you exactly what you have access to."/>
+                        </Border>
+                        <Button Content="Sign in…" IsEnabled="False" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </Expander>
+
+                <!-- ─── Monitoring ─── -->
+                <Separator Margin="0,8"/>
+                <TextBlock Text="Monitoring" FontSize="16" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" Margin="0,0,0,4"/>
+
+                <CheckBox IsChecked="{Binding MonitorMyBuilds}">
                     <TextBlock Text="Notify me when my builds fail" TextWrapping="Wrap"/>
                 </CheckBox>
 
-                <TextBlock Text="Watched Pipelines" FontSize="12" Opacity="0.7" Margin="0,8,0,0"/>
-                <TextBlock Text="Get alerted when these pipelines fail:" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                          Header="Pipelines">
+                    <StackPanel Spacing="8" Margin="0,8,0,0">
+                        <TextBlock Text="Get alerted when these pipelines fail:" FontSize="11" Opacity="0.5"/>
 
-                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
-                    <Button Command="{Binding LoadPipelinesCommand}" Content="⟳"
-                            FontSize="14" Width="32" HorizontalContentAlignment="Center"
-                            IsEnabled="{Binding !IsLoadingPipelines}"
-                            ToolTip.Tip="Refresh pipeline list"/>
-                    <TextBlock Text="{Binding PipelinePickerStatus}" FontSize="12"
-                               VerticalAlignment="Center" Opacity="0.7"
-                               ToolTip.Tip="{Binding PipelinePickerTooltip}"/>
-                </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Command="{Binding LoadPipelinesCommand}" Content="⟳"
+                                    FontSize="14" Width="32" HorizontalContentAlignment="Center"
+                                    IsEnabled="{Binding !IsLoadingPipelines}"
+                                    ToolTip.Tip="Refresh pipeline list"/>
+                            <TextBlock Text="{Binding PipelinePickerStatus}" FontSize="12"
+                                       VerticalAlignment="Center" Opacity="0.7"
+                                       ToolTip.Tip="{Binding PipelinePickerTooltip}"/>
+                        </StackPanel>
 
-                <TextBox Text="{Binding PipelineFilter}" PlaceholderText="🔍 Filter pipelines…"
-                         Margin="0,0,0,4"
-                         IsVisible="{Binding AvailablePipelines.Count}"/>
+                        <TextBox Text="{Binding PipelineFilter}" PlaceholderText="🔍 Filter pipelines…"
+                                 IsVisible="{Binding AvailablePipelines.Count}"/>
 
-                <Border MaxHeight="200" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1" CornerRadius="4"
-                        IsVisible="{Binding AvailablePipelines.Count}">
-                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding FilteredPipelines}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:SelectablePipeline">
-                                    <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
-                                        <TextBlock Text="{Binding DisplayName}" FontSize="12"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                    </CheckBox>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                </Border>
+                        <Border MaxHeight="200" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1" CornerRadius="4"
+                                IsVisible="{Binding AvailablePipelines.Count}">
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding FilteredPipelines}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SelectablePipeline">
+                                            <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
+                                                <TextBlock Text="{Binding DisplayName}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </CheckBox>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                </Expander>
 
-                <!-- ═══ General ═══ -->
-                <Separator Margin="0,12"/>
+                <!-- ─── General ─── -->
+                <Separator Margin="0,8"/>
                 <TextBlock Text="General" FontSize="16" FontWeight="SemiBold"
-                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                           HorizontalAlignment="Center" Margin="0,0,0,4"/>
 
-                <CheckBox IsChecked="{Binding AutoStartEnabled}" Margin="0,0,0,4">
+                <CheckBox IsChecked="{Binding AutoStartEnabled}">
                     <TextBlock Text="Launch Huginn at login" TextWrapping="Wrap"/>
                 </CheckBox>
 
