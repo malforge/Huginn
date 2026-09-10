@@ -64,10 +64,10 @@
                            HorizontalAlignment="Center" Margin="0,0,0,8"/>
 
                 <TextBlock Text="Organization" FontSize="12" Opacity="0.7"/>
-                <TextBox Text="{Binding Organization}" Watermark="e.g. contoso"/>
+                <TextBox Text="{Binding Organization}" PlaceholderText="e.g. contoso"/>
 
                 <TextBlock Text="Project" FontSize="12" Opacity="0.7"/>
-                <TextBox Text="{Binding Project}" Watermark="e.g. fabrikam"/>
+                <TextBox Text="{Binding Project}" PlaceholderText="e.g. fabrikam"/>
 
                 <TextBlock Text="Personal Access Token" FontSize="12" Opacity="0.7"/>
                 <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12" Margin="0,0,0,4">
@@ -90,7 +90,7 @@
                         <TextBlock FontSize="12" TextWrapping="Wrap" Text="5. Click Create and paste the token below"/>
                     </StackPanel>
                 </Border>
-                <TextBox Text="{Binding Pat}" Watermark="Paste your PAT here"
+                <TextBox Text="{Binding Pat}" PlaceholderText="Paste your PAT here"
                          PasswordChar="●" RevealPassword="False"/>
 
                 <!-- ═══ Pipeline Monitoring ═══ -->
@@ -115,7 +115,7 @@
                                ToolTip.Tip="{Binding PipelinePickerTooltip}"/>
                 </StackPanel>
 
-                <TextBox Text="{Binding PipelineFilter}" Watermark="🔍 Filter pipelines…"
+                <TextBox Text="{Binding PipelineFilter}" PlaceholderText="🔍 Filter pipelines…"
                          Margin="0,0,0,4"
                          IsVisible="{Binding AvailablePipelines.Count}"/>
 
