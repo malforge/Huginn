@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -343,7 +344,13 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
             && desktop.MainWindow?.Clipboard is { } clipboard)
         {
-            try { await clipboard.SetTextAsync(url); } catch { }
+            try
+            {
+                var transfer = new DataTransfer();
+                transfer.Add(DataTransferItem.CreateText(url));
+                await clipboard.SetDataAsync(transfer);
+            }
+            catch { }
         }
     }
 
