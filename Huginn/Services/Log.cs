@@ -17,7 +17,13 @@ public static class Log
     {
         if (_writer != null) return;
         Directory.CreateDirectory(LogDir);
-        _writer = new StreamWriter(LogPath, append: true) { AutoFlush = true };
+        // FileShare.ReadWrite so a second instance still logs instead of silently
+        // losing every line to a sharing violation.
+        _writer = new StreamWriter(
+            new FileStream(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+        {
+            AutoFlush = true,
+        };
     }
 
     private static void Write(string level, string message)
