@@ -78,13 +78,12 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _organization = "";
     [ObservableProperty] private string _project = "";
     [ObservableProperty] private string _pat = "";
-    [ObservableProperty] private string _testConnectionResult = "";
     [ObservableProperty] private string _sentryOrganization = "";
+    [ObservableProperty] private string _sentryRegionUrl = "";
     [ObservableProperty] private string _sentryToken = "";
     [ObservableProperty] private bool _isAdoExpanded;
     [ObservableProperty] private bool _isSentryExpanded;
     [ObservableProperty] private bool _isAppInsightsExpanded;
-    [ObservableProperty] private bool _isTesting;
     [ObservableProperty] private bool _monitorMyBuilds;
     [ObservableProperty] private bool _autoStartEnabled;
 
@@ -108,6 +107,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         Project = _settings.Project;
         Pat = _settings.GetPat() ?? "";
         SentryOrganization = _settings.SentryOrganization;
+        SentryRegionUrl = _settings.SentryRegionUrl;
         SentryToken = _settings.GetSentryToken() ?? "";
         MonitorMyBuilds = _settings.MonitorMyBuilds;
         AutoStartEnabled = _autoStart.IsEnabled;
@@ -268,33 +268,81 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private async Task TestConnectionAsync()
+    private Task TestConnectionAsync(ConnectionKind kind) => kind switch
+    {
+        ConnectionKind.AzureDevOps => TestAzureDevOpsAsync(),
+        ConnectionKind.Sentry => TestSentryAsync(),
+        _ => Task.CompletedTask,
+    };
+
+    /// <summary>
+    /// Tests what is currently typed into the settings fields rather than what is saved, so the
+    /// user can check credentials before committing them.
+    /// </summary>
+    private Task TestAzureDevOpsAsync()
     {
         if (string.IsNullOrWhiteSpace(Organization) || string.IsNullOrWhiteSpace(Pat))
         {
-            TestConnectionResult = "⚠ Organization and PAT are required.";
-            return;
+            AdoStatus.Set(ConnectionState.NotConfigured, "Organization and PAT are required");
+            return Task.CompletedTask;
         }
 
-        IsTesting = true;
-        TestConnectionResult = "Testing…";
-
-        try
+        return RunConnectionTestAsync(AdoStatus, async () =>
         {
             using var client = new AdoApiClient(Organization.Trim(), Project.Trim(), Pat.Trim());
             var userId = await client.GetMyProfileIdAsync();
-            TestConnectionResult = string.IsNullOrEmpty(userId)
-                ? "❌ Auth failed — check your PAT."
-                : $"✅ Connected (user ID: {userId[..Math.Min(8, userId.Length)]}…)";
+            return string.IsNullOrEmpty(userId)
+                ? (ConnectionState.AuthFailed, "Auth failed, check your PAT")
+                : (ConnectionState.Connected, $"Connected as {userId[..Math.Min(8, userId.Length)]}…");
+        });
+    }
+
+    private Task TestSentryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SentryOrganization) || string.IsNullOrWhiteSpace(SentryToken))
+        {
+            SentryStatus.Set(ConnectionState.NotConfigured, "Organization and token are required");
+            return Task.CompletedTask;
+        }
+
+        return RunConnectionTestAsync(SentryStatus, async () =>
+        {
+            var region = string.IsNullOrWhiteSpace(SentryRegionUrl) ? "https://sentry.io" : SentryRegionUrl.Trim();
+            using var client = new SentryApiClient($"{region.TrimEnd('/')}/api/0", SentryToken.Trim());
+            var name = await client.GetOrganizationNameAsync(SentryOrganization.Trim());
+            return string.IsNullOrEmpty(name)
+                ? (ConnectionState.AuthFailed, "Auth failed, check the token and its scopes")
+                : (ConnectionState.Connected, $"Connected to {name}");
+        });
+    }
+
+    /// <summary>
+    /// Minimum time the Testing state stays on screen. These calls can finish faster than the eye
+    /// registers, and an instant result on an already-connected source looks like a dead button.
+    /// </summary>
+    private static readonly TimeSpan MinimumTestFeedback = TimeSpan.FromMilliseconds(450);
+
+    private static async Task RunConnectionTestAsync(
+        ConnectionStatus status, Func<Task<(ConnectionState State, string Message)>> probe)
+    {
+        status.Set(ConnectionState.Connecting, "Testing…");
+        var started = Stopwatch.StartNew();
+
+        (ConnectionState State, string Message) result;
+        try
+        {
+            result = await probe();
         }
         catch (Exception ex)
         {
-            TestConnectionResult = $"❌ {ex.Message}";
+            result = (ConnectionState.Error, ex.Message);
         }
-        finally
-        {
-            IsTesting = false;
-        }
+
+        var remaining = MinimumTestFeedback - started.Elapsed;
+        if (remaining > TimeSpan.Zero)
+            await Task.Delay(remaining);
+
+        status.Set(result.State, result.Message);
     }
 
     [RelayCommand]
@@ -303,6 +351,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _settings.Organization = Organization.Trim();
         _settings.Project = Project.Trim();
         _settings.SentryOrganization = SentryOrganization.Trim();
+        _settings.SentryRegionUrl = SentryRegionUrl.Trim();
         _settings.MonitorMyBuilds = MonitorMyBuilds;
         _settings.WatchedPipelineIds = AvailablePipelines
             .Where(p => p.IsSelected).Select(p => p.Id).ToList();

@@ -15,6 +15,7 @@ public sealed partial class ConnectionStatus : ObservableObject
     [NotifyPropertyChangedFor(nameof(StateText))]
     [NotifyPropertyChangedFor(nameof(NeedsAttention))]
     [NotifyPropertyChangedFor(nameof(IsConnected))]
+    [NotifyPropertyChangedFor(nameof(IsBusy))]
     private ConnectionState _state = ConnectionState.NotConfigured;
 
     /// <summary>Detail replacing the default state text, e.g. an error from the server.</summary>
@@ -27,6 +28,9 @@ public sealed partial class ConnectionStatus : ObservableObject
         State is ConnectionState.NotConfigured or ConnectionState.AuthFailed or ConnectionState.Error;
 
     public bool IsConnected => State == ConnectionState.Connected;
+
+    /// <summary>A check is in flight, so actions against this connection are disabled.</summary>
+    public bool IsBusy => State == ConnectionState.Connecting;
 
     public string Glyph => State switch
     {

@@ -116,6 +116,17 @@
                         </Border>
                         <TextBox Text="{Binding Pat}" PlaceholderText="Paste your PAT here"
                                  PasswordChar="●" RevealPassword="False"/>
+
+                        <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
+                            <Button Grid.Column="0" Command="{Binding TestConnectionCommand}"
+                                    CommandParameter="{x:Static models:ConnectionKind.AzureDevOps}"
+                                    IsEnabled="{Binding !AdoStatus.IsBusy}"
+                                    Content="Test connection"/>
+                            <TextBlock Grid.Column="1" Text="{Binding AdoStatus.Glyph}" FontSize="14"
+                                       VerticalAlignment="Center" Margin="10,0,6,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding AdoStatus.StateText}" FontSize="12"
+                                       VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
+                        </Grid>
                     </StackPanel>
                 </Expander>
 
@@ -126,6 +137,11 @@
                     <StackPanel Spacing="8" Margin="0,8,0,0">
                         <TextBlock Text="Organization" FontSize="12" Opacity="0.7"/>
                         <TextBox Text="{Binding SentryOrganization}" PlaceholderText="e.g. contoso-as"/>
+
+                        <TextBlock Text="Region URL" FontSize="12" Opacity="0.7"/>
+                        <TextBox Text="{Binding SentryRegionUrl}" PlaceholderText="https://sentry.io"/>
+                        <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                                   Text="EU-resident organisations answer on https://de.sentry.io. The org settings page shows which region yours is in."/>
 
                         <TextBlock Text="Auth token" FontSize="12" Opacity="0.7"/>
                         <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12">
@@ -150,6 +166,17 @@
                         </Border>
                         <TextBox Text="{Binding SentryToken}" PlaceholderText="Paste your Sentry token here"
                                  PasswordChar="●" RevealPassword="False"/>
+
+                        <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
+                            <Button Grid.Column="0" Command="{Binding TestConnectionCommand}"
+                                    CommandParameter="{x:Static models:ConnectionKind.Sentry}"
+                                    IsEnabled="{Binding !SentryStatus.IsBusy}"
+                                    Content="Test connection"/>
+                            <TextBlock Grid.Column="1" Text="{Binding SentryStatus.Glyph}" FontSize="14"
+                                       VerticalAlignment="Center" Margin="10,0,6,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding SentryStatus.StateText}" FontSize="12"
+                                       VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
+                        </Grid>
                     </StackPanel>
                 </Expander>
 
@@ -261,16 +288,9 @@
                         Content="Install update and restart now" Classes="accent"
                         HorizontalAlignment="Center" Margin="0,8,0,0"/>
 
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12" Margin="0,12,0,0">
-                    <Button Command="{Binding TestConnectionCommand}"
-                            Content="Test Connection" IsEnabled="{Binding !IsTesting}"/>
-                    <Button Command="{Binding SaveAndConnectCommand}"
-                            Content="Save &amp; Connect" Classes="accent"/>
-                </StackPanel>
-
-                <TextBlock Text="{Binding TestConnectionResult}" FontSize="12"
-                           HorizontalAlignment="Center" TextWrapping="Wrap"
-                           Margin="0,8,0,0"/>
+                <Button Command="{Binding SaveAndConnectCommand}"
+                        Content="Save &amp; Connect" Classes="accent"
+                        HorizontalAlignment="Center" Margin="0,12,0,0"/>
             </StackPanel>
             </ScrollViewer>
         </Border>
