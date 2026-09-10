@@ -29,6 +29,17 @@ public sealed partial class AppSettings
     public string SentryRegionUrl { get; set; } = "https://sentry.io";
     public List<string> WatchedSentryProjects { get; set; } = [];
 
+    // Application Insights
+    public string AppInsightsTenantId { get; set; } = "";
+
+    /// <summary>
+    /// Application registration presented at sign-in. Empty uses the Azure SDK development
+    /// application, which needs no setup but is not the recommended posture for a production tenant.
+    /// </summary>
+    public string AppInsightsClientId { get; set; } = "";
+
+    public List<string> WatchedAppInsightsAppIds { get; set; } = [];
+
     // Window state (only size/position are recorded when in Normal state)
     public double? WindowX { get; set; }
     public double? WindowY { get; set; }
@@ -55,6 +66,9 @@ public sealed partial class AppSettings
         !string.IsNullOrWhiteSpace(Organization)
         && !string.IsNullOrWhiteSpace(Project)
         && !string.IsNullOrWhiteSpace(GetPat());
+
+    /// <summary>The Application Insights connection has a signed-in account and something to watch.</summary>
+    public bool IsAppInsightsConfigured => WatchedAppInsightsAppIds.Count > 0;
 
     /// <summary>The Sentry connection has everything it needs to attempt a poll.</summary>
     public bool IsSentryConfigured =>
@@ -88,10 +102,17 @@ public sealed partial class AppSettings
     /// <summary>Base URL of the Sentry API, honouring the organisation data region.</summary>
     public string GetSentryApiBaseUrl() => $"{SentryRegionUrl.TrimEnd('/')}/api/0";
 
-    public string GetSentryTokenPageUrl() =>
-        string.IsNullOrWhiteSpace(SentryOrganization)
-            ? "https://sentry.io/settings/account/api/auth-tokens/"
-            : $"https://{Uri.EscapeDataString(SentryOrganization)}.sentry.io/settings/account/api/auth-tokens/";
+    /// <summary>
+    /// Auth tokens are account level rather than organisation level, so this needs only the data
+    /// region and is always openable.
+    /// </summary>
+    public string GetSentryTokenPageUrl()
+    {
+        string region = string.IsNullOrWhiteSpace(SentryRegionUrl)
+            ? "https://sentry.io"
+            : SentryRegionUrl.TrimEnd('/');
+        return $"{region}/settings/account/api/auth-tokens/";
+    }
 
     public string GetWebBaseUrl() =>
         $"https://dev.azure.com/{Uri.EscapeDataString(Organization)}/{Uri.EscapeDataString(Project)}";
@@ -148,6 +169,9 @@ public sealed partial class AppSettings
             SentryOrganization = SentryOrganization,
             SentryRegionUrl = SentryRegionUrl,
             WatchedSentryProjects = WatchedSentryProjects,
+            AppInsightsTenantId = AppInsightsTenantId,
+            AppInsightsClientId = AppInsightsClientId,
+            WatchedAppInsightsAppIds = WatchedAppInsightsAppIds,
             WindowX = WindowX,
             WindowY = WindowY,
             WindowWidth = WindowWidth,
@@ -182,6 +206,9 @@ public sealed partial class AppSettings
                     ? "https://sentry.io"
                     : dto.SentryRegionUrl,
                 WatchedSentryProjects = dto.WatchedSentryProjects ?? [],
+                AppInsightsTenantId = dto.AppInsightsTenantId ?? "",
+                AppInsightsClientId = dto.AppInsightsClientId ?? "",
+                WatchedAppInsightsAppIds = dto.WatchedAppInsightsAppIds ?? [],
                 WindowX = dto.WindowX,
                 WindowY = dto.WindowY,
                 WindowWidth = dto.WindowWidth,
@@ -207,6 +234,9 @@ public sealed partial class AppSettings
         public string? SentryOrganization { get; set; }
         public string? SentryRegionUrl { get; set; }
         public List<string>? WatchedSentryProjects { get; set; }
+        public string? AppInsightsTenantId { get; set; }
+        public string? AppInsightsClientId { get; set; }
+        public List<string>? WatchedAppInsightsAppIds { get; set; }
         public double? WindowX { get; set; }
         public double? WindowY { get; set; }
         public double? WindowWidth { get; set; }

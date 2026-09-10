@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -81,6 +82,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _sentryOrganization = "";
     [ObservableProperty] private string _sentryRegionUrl = "";
     [ObservableProperty] private string _sentryToken = "";
+    [ObservableProperty] private string _appInsightsTenantId = "";
+    [ObservableProperty] private string _appInsightsClientId = "";
+    [ObservableProperty] private string _appInsightsAccount = "";
     [ObservableProperty] private bool _isAdoExpanded;
     [ObservableProperty] private bool _isSentryExpanded;
     [ObservableProperty] private bool _isAppInsightsExpanded;
@@ -95,6 +99,13 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _pipelinePickerTooltip = "";
     [ObservableProperty] private string _pipelineFilter = "";
 
+    // Application Insights component picker
+    public ObservableCollection<SelectableComponent> AvailableComponents { get; } = [];
+    public ObservableCollection<SelectableComponent> FilteredComponents { get; } = [];
+    [ObservableProperty] private bool _isLoadingComponents;
+    [ObservableProperty] private string _componentPickerStatus = "";
+    [ObservableProperty] private string _componentFilter = "";
+
     // Cached data for re-categorization on filter change
     private PollResult? _lastPollResult;
 
@@ -108,6 +119,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         Pat = _settings.GetPat() ?? "";
         SentryOrganization = _settings.SentryOrganization;
         SentryRegionUrl = _settings.SentryRegionUrl;
+        AppInsightsTenantId = _settings.AppInsightsTenantId;
+        AppInsightsClientId = _settings.AppInsightsClientId;
         SentryToken = _settings.GetSentryToken() ?? "";
         MonitorMyBuilds = _settings.MonitorMyBuilds;
         AutoStartEnabled = _autoStart.IsEnabled;
@@ -123,6 +136,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (_settings.IsSentryConfigured)
             SentryStatus.Set(ConnectionState.Connected, "Configured, not yet polled");
+
+        _ = ResumeAzureSignInAsync();
 
         if (_settings.IsAdoConfigured)
         {
@@ -236,6 +251,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     partial void OnPipelineFilterChanged(string value) => ApplyPipelineFilter();
 
+    partial void OnComponentFilterChanged(string value) => ApplyComponentFilter();
+
     partial void OnAutoStartEnabledChanged(bool value)
     {
         if (value)
@@ -272,6 +289,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         ConnectionKind.AzureDevOps => TestAzureDevOpsAsync(),
         ConnectionKind.Sentry => TestSentryAsync(),
+        ConnectionKind.AppInsights => TestAppInsightsAsync(),
         _ => Task.CompletedTask,
     };
 
@@ -294,7 +312,195 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             return string.IsNullOrEmpty(userId)
                 ? (ConnectionState.AuthFailed, "Auth failed, check your PAT")
                 : (ConnectionState.Connected, $"Connected as {userId[..Math.Min(8, userId.Length)]}…");
-        });
+        }, SaveAdoConnection);
+    }
+
+    private AzureSignIn CreateAzureSignIn() =>
+        new("appinsights", AppInsightsTenantId?.Trim(), AppInsightsClientId?.Trim());
+
+    /// <summary>
+    /// Picks up a previous sign-in without prompting, so a restart does not demand the browser.
+    /// </summary>
+    private async Task ResumeAzureSignInAsync()
+    {
+        var signIn = CreateAzureSignIn();
+        if (!signIn.HasStoredAccount)
+        {
+            AppInsightsStatus.Set(ConnectionState.NotConfigured);
+            return;
+        }
+
+        try
+        {
+            var (_, account) = await signIn.GetCredentialAsync(allowPrompt: false);
+            AppInsightsAccount = account;
+            // Name what is missing rather than the state it is in: the banner is a list of things
+            // to act on, and "signed in" is not one of them.
+            AppInsightsStatus.Set(
+                _settings.IsAppInsightsConfigured ? ConnectionState.Connected : ConnectionState.NotConfigured,
+                _settings.IsAppInsightsConfigured ? $"Signed in as {account}" : "No resources selected");
+        }
+        catch (Exception ex)
+        {
+            AppInsightsStatus.Set(ConnectionState.AuthFailed, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Sign-in opens the system default browser and then waits for it to redirect back. Closing
+    /// that browser strands the wait, so it is bounded and cancellable.
+    /// </summary>
+    private static readonly TimeSpan SignInTimeout = TimeSpan.FromMinutes(5);
+
+    private CancellationTokenSource? _azureSignInCts;
+
+    [RelayCommand]
+    private async Task SignInToAzureAsync()
+    {
+        CancelAzureSignIn();
+        _azureSignInCts = new CancellationTokenSource(SignInTimeout);
+        var ct = _azureSignInCts.Token;
+
+        AppInsightsStatus.Set(ConnectionState.Connecting, "Waiting for your browser… (Cancel to stop)");
+        try
+        {
+            var (_, account) = await CreateAzureSignIn().GetCredentialAsync(allowPrompt: true, ct);
+            AppInsightsAccount = account;
+            SaveAppInsightsConnection();
+            AppInsightsStatus.Set(ConnectionState.Connected, $"Signed in as {account}");
+            await LoadComponentsAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            AppInsightsStatus.Set(ConnectionState.NotConfigured, "Sign-in cancelled");
+        }
+        catch (Exception ex)
+        {
+            AppInsightsStatus.Set(ConnectionState.Error, ex.Message);
+        }
+        finally
+        {
+            _azureSignInCts?.Dispose();
+            _azureSignInCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private void CancelAzureSignIn()
+    {
+        try
+        {
+            _azureSignInCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already finished; nothing to stop.
+        }
+    }
+
+    [RelayCommand]
+    private void SignOutOfAzure()
+    {
+        CreateAzureSignIn().SignOut();
+        AppInsightsAccount = "";
+        AvailableComponents.Clear();
+        FilteredComponents.Clear();
+        ComponentPickerStatus = "";
+        AppInsightsStatus.Set(ConnectionState.NotConfigured);
+    }
+
+    [RelayCommand]
+    private async Task LoadComponentsAsync()
+    {
+        var signIn = CreateAzureSignIn();
+        if (!signIn.HasStoredAccount)
+        {
+            ComponentPickerStatus = "Sign in first";
+            return;
+        }
+
+        IsLoadingComponents = true;
+        ComponentPickerStatus = "Loading resources…";
+        try
+        {
+            var (credential, _) = await signIn.GetCredentialAsync(allowPrompt: false);
+            using var client = new AppInsightsApiClient(credential);
+            var found = await client.GetComponentsAsync();
+
+            var selected = new HashSet<string>(
+                AvailableComponents.Where(c => c.IsSelected).Select(c => c.AppId));
+            foreach (var id in _settings.WatchedAppInsightsAppIds)
+                selected.Add(id);
+
+            AvailableComponents.Clear();
+            foreach (var c in found
+                .OrderByDescending(c => selected.Contains(c.AppId))
+                .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                AvailableComponents.Add(new SelectableComponent
+                {
+                    AppId = c.AppId,
+                    DisplayName = c.Name,
+                    Qualifier = c.Qualifier,
+                    IsSelected = selected.Contains(c.AppId),
+                });
+            }
+
+            ComponentPickerStatus = $"{found.Count} resource{(found.Count != 1 ? "s" : "")} visible to you";
+            ComponentFilter = "";
+            ApplyComponentFilter();
+        }
+        catch (Exception ex)
+        {
+            ComponentPickerStatus = ex.Message;
+        }
+        finally
+        {
+            IsLoadingComponents = false;
+        }
+    }
+
+    private void ApplyComponentFilter()
+    {
+        FilteredComponents.Clear();
+        var filter = ComponentFilter?.Trim() ?? "";
+        foreach (var c in AvailableComponents)
+        {
+            if (filter.Length == 0
+                || c.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                || c.Qualifier.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                FilteredComponents.Add(c);
+        }
+    }
+
+    private Task TestAppInsightsAsync()
+    {
+        var signIn = CreateAzureSignIn();
+        if (!signIn.HasStoredAccount)
+        {
+            AppInsightsStatus.Set(ConnectionState.NotConfigured, "Sign in first");
+            return Task.CompletedTask;
+        }
+
+        var watched = AvailableComponents.Where(c => c.IsSelected).Select(c => c.AppId).ToList();
+        if (watched.Count == 0) watched = _settings.WatchedAppInsightsAppIds;
+        if (watched.Count == 0)
+        {
+            AppInsightsStatus.Set(ConnectionState.NotConfigured, "Pick at least one resource to watch");
+            return Task.CompletedTask;
+        }
+
+        return RunConnectionTestAsync(AppInsightsStatus, async () =>
+        {
+            var (credential, account) = await signIn.GetCredentialAsync(allowPrompt: false);
+            using var client = new AppInsightsApiClient(credential);
+
+            // Cheapest query that proves both the token and the resource are usable.
+            var table = await client.QueryAsync(watched[0], "requests | limit 1 | project timestamp");
+            return (ConnectionState.Connected,
+                $"Signed in as {account}, {watched.Count} resource{(watched.Count != 1 ? "s" : "")} readable"
+                + (table.Rows.Count == 0 ? " (no recent requests)" : ""));
+        }, SaveAppInsightsConnection);
     }
 
     private Task TestSentryAsync()
@@ -313,7 +519,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             return string.IsNullOrEmpty(name)
                 ? (ConnectionState.AuthFailed, "Auth failed, check the token and its scopes")
                 : (ConnectionState.Connected, $"Connected to {name}");
-        });
+        }, SaveSentryConnection);
     }
 
     /// <summary>
@@ -323,7 +529,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private static readonly TimeSpan MinimumTestFeedback = TimeSpan.FromMilliseconds(450);
 
     private static async Task RunConnectionTestAsync(
-        ConnectionStatus status, Func<Task<(ConnectionState State, string Message)>> probe)
+        ConnectionStatus status,
+        Func<Task<(ConnectionState State, string Message)>> probe,
+        Action? persist = null)
     {
         status.Set(ConnectionState.Connecting, "Testing…");
         var started = Stopwatch.StartNew();
@@ -338,11 +546,42 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             result = (ConnectionState.Error, ex.Message);
         }
 
+        // Persist whatever was typed regardless of the outcome. A failing test is usually a
+        // wrong region or scope rather than a wrong secret, and discarding the secret because the
+        // test failed loses something the user often cannot get again.
+        persist?.Invoke();
+        var suffix = persist is null ? "" : ", saved";
+
         var remaining = MinimumTestFeedback - started.Elapsed;
         if (remaining > TimeSpan.Zero)
             await Task.Delay(remaining);
 
-        status.Set(result.State, result.Message);
+        status.Set(result.State, result.Message + suffix);
+    }
+
+    private void SaveAdoConnection()
+    {
+        _settings.Organization = Organization.Trim();
+        _settings.Project = Project.Trim();
+        if (!string.IsNullOrWhiteSpace(Pat)) _settings.SetPat(Pat.Trim());
+        _settings.Save();
+    }
+
+    private void SaveSentryConnection()
+    {
+        _settings.SentryOrganization = SentryOrganization.Trim();
+        _settings.SentryRegionUrl = SentryRegionUrl.Trim();
+        if (!string.IsNullOrWhiteSpace(SentryToken)) _settings.SetSentryToken(SentryToken.Trim());
+        _settings.Save();
+    }
+
+    private void SaveAppInsightsConnection()
+    {
+        _settings.AppInsightsTenantId = AppInsightsTenantId.Trim();
+        _settings.AppInsightsClientId = AppInsightsClientId.Trim();
+        _settings.WatchedAppInsightsAppIds = AvailableComponents
+            .Where(c => c.IsSelected).Select(c => c.AppId).ToList();
+        _settings.Save();
     }
 
     [RelayCommand]
@@ -352,6 +591,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _settings.Project = Project.Trim();
         _settings.SentryOrganization = SentryOrganization.Trim();
         _settings.SentryRegionUrl = SentryRegionUrl.Trim();
+        _settings.AppInsightsTenantId = AppInsightsTenantId.Trim();
+        _settings.AppInsightsClientId = AppInsightsClientId.Trim();
+        _settings.WatchedAppInsightsAppIds = AvailableComponents
+            .Where(c => c.IsSelected).Select(c => c.AppId).ToList();
         _settings.MonitorMyBuilds = MonitorMyBuilds;
         _settings.WatchedPipelineIds = AvailablePipelines
             .Where(p => p.IsSelected).Select(p => p.Id).ToList();
@@ -522,13 +765,31 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OpenPatPage()
     {
         var org = Organization?.Trim();
-        if (string.IsNullOrWhiteSpace(org)) return;
+        if (string.IsNullOrWhiteSpace(org))
+        {
+            // The URL is organisation scoped, so there is nowhere to go until it is filled in.
+            AdoStatus.Set(ConnectionState.NotConfigured, "Enter the Organization first");
+            return;
+        }
+
+        OpenUrl($"https://dev.azure.com/{Uri.EscapeDataString(org)}/_usersSettings/tokens", AdoStatus);
+    }
+
+    /// <summary>
+    /// Opens a link in the default browser, reporting failure through the connection rather than
+    /// leaving a link that silently does nothing.
+    /// </summary>
+    private static void OpenUrl(string url, ConnectionStatus status)
+    {
         try
         {
-            var url = $"https://dev.azure.com/{Uri.EscapeDataString(org)}/_usersSettings/tokens";
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Error($"Could not open {url}: {ex.Message}");
+            status.Set(ConnectionState.Error, $"Could not open the browser: {ex.Message}");
+        }
     }
 
     private void HandlePollResult(PollResult result)
@@ -678,12 +939,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void OpenSentryTokenPage()
     {
-        try
-        {
-            _settings.SentryOrganization = SentryOrganization?.Trim() ?? "";
-            Process.Start(new ProcessStartInfo(_settings.GetSentryTokenPageUrl()) { UseShellExecute = true });
-        }
-        catch { }
+        _settings.SentryRegionUrl = SentryRegionUrl?.Trim() ?? "";
+        OpenUrl(_settings.GetSentryTokenPageUrl(), SentryStatus);
     }
 
 [RelayCommand]

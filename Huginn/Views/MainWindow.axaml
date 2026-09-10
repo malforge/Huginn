@@ -78,7 +78,7 @@
                 <!-- ─── Connections ─── -->
                 <TextBlock Text="Connections" FontSize="16" FontWeight="SemiBold"
                            HorizontalAlignment="Center"/>
-                <TextBlock Text="Each source signs in separately. Huginn keeps monitoring whichever ones are connected."
+                <TextBlock Text="Each source holds its own sign-in and its own list of what to watch. Huginn keeps monitoring whichever ones are connected."
                            FontSize="11" Opacity="0.5" TextWrapping="Wrap" TextAlignment="Center"
                            HorizontalAlignment="Center" Margin="0,0,0,4"/>
 
@@ -101,9 +101,7 @@
                                     <TextBlock FontSize="12" Text="1. "/>
                                     <Button Command="{Binding OpenPatPageCommand}"
                                             Padding="0" Margin="0" MinHeight="0" MinWidth="0"
-                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
-                                            IsEnabled="{Binding Organization, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                                            ToolTip.Tip="Enter the Organization name above first">
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand">
                                         <TextBlock FontSize="12" Text="Open the token settings page ↗"
                                                    Foreground="#648CB4" TextDecorations="Underline"/>
                                     </Button>
@@ -127,6 +125,49 @@
                             <TextBlock Grid.Column="2" Text="{Binding AdoStatus.StateText}" FontSize="12"
                                        VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
                         </Grid>
+
+                        <Separator Margin="0,4"/>
+                        <TextBlock Text="What to watch" FontSize="12" FontWeight="SemiBold" Opacity="0.8"/>
+                        <CheckBox IsChecked="{Binding MonitorMyBuilds}">
+                            <TextBlock Text="Notify me when my builds fail" TextWrapping="Wrap"/>
+                        </CheckBox>
+
+                        <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                  Header="Pipelines">
+                            <StackPanel Spacing="8" Margin="0,8,0,0">
+                                <TextBlock Text="Get alerted when these pipelines fail:" FontSize="11" Opacity="0.5"/>
+
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Command="{Binding LoadPipelinesCommand}" Content="⟳"
+                                            FontSize="14" Width="32" HorizontalContentAlignment="Center"
+                                            IsEnabled="{Binding !IsLoadingPipelines}"
+                                            ToolTip.Tip="Refresh pipeline list"/>
+                                    <TextBlock Text="{Binding PipelinePickerStatus}" FontSize="12"
+                                               VerticalAlignment="Center" Opacity="0.7"
+                                               ToolTip.Tip="{Binding PipelinePickerTooltip}"/>
+                                </StackPanel>
+
+                                <TextBox Text="{Binding PipelineFilter}" PlaceholderText="🔍 Filter pipelines…"
+                                         IsVisible="{Binding AvailablePipelines.Count}"/>
+
+                                <Border MaxHeight="200" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="4"
+                                        IsVisible="{Binding AvailablePipelines.Count}">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding FilteredPipelines}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:SelectablePipeline">
+                                                    <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
+                                                        <TextBlock Text="{Binding DisplayName}" FontSize="12"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </CheckBox>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </Expander>
 
@@ -151,9 +192,7 @@
                                     <TextBlock FontSize="12" Text="1. "/>
                                     <Button Command="{Binding OpenSentryTokenPageCommand}"
                                             Padding="0" Margin="0" MinHeight="0" MinWidth="0"
-                                            Background="Transparent" BorderThickness="0" Cursor="Hand"
-                                            IsEnabled="{Binding SentryOrganization, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                                            ToolTip.Tip="Enter the Organization name above first">
+                                            Background="Transparent" BorderThickness="0" Cursor="Hand">
                                         <TextBlock FontSize="12" Text="Open the auth tokens page ↗"
                                                    Foreground="#648CB4" TextDecorations="Underline"/>
                                     </Button>
@@ -187,55 +226,94 @@
                     <StackPanel Spacing="8" Margin="0,8,0,0">
                         <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12">
                             <TextBlock FontSize="12" TextWrapping="Wrap"
-                                       Text="Not yet available in this build. This connection signs in with your own Azure account, once per environment, so it shows you exactly what you have access to."/>
+                                       Text="Sign in with your own Azure account. Huginn then lists only the Application Insights resources you personally have access to, so nothing here is shared between people. Sign-in opens your system default browser and waits for it to come back, so complete it there rather than reopening the link elsewhere."/>
                         </Border>
-                        <Button Content="Sign in…" IsEnabled="False" HorizontalAlignment="Left"/>
-                    </StackPanel>
-                </Expander>
 
-                <!-- ─── Monitoring ─── -->
-                <Separator Margin="0,8"/>
-                <TextBlock Text="Monitoring" FontSize="16" FontWeight="SemiBold"
-                           HorizontalAlignment="Center" Margin="0,0,0,4"/>
-
-                <CheckBox IsChecked="{Binding MonitorMyBuilds}">
-                    <TextBlock Text="Notify me when my builds fail" TextWrapping="Wrap"/>
-                </CheckBox>
-
-                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                          Header="Pipelines">
-                    <StackPanel Spacing="8" Margin="0,8,0,0">
-                        <TextBlock Text="Get alerted when these pipelines fail:" FontSize="11" Opacity="0.5"/>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Command="{Binding LoadPipelinesCommand}" Content="⟳"
-                                    FontSize="14" Width="32" HorizontalContentAlignment="Center"
-                                    IsEnabled="{Binding !IsLoadingPipelines}"
-                                    ToolTip.Tip="Refresh pipeline list"/>
-                            <TextBlock Text="{Binding PipelinePickerStatus}" FontSize="12"
-                                       VerticalAlignment="Center" Opacity="0.7"
-                                       ToolTip.Tip="{Binding PipelinePickerTooltip}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                            <Button Command="{Binding SignInToAzureCommand}"
+                                    IsEnabled="{Binding !AppInsightsStatus.IsBusy}"
+                                    Content="Sign in…" Classes="accent"/>
+                            <Button Command="{Binding CancelAzureSignInCommand}"
+                                    IsEnabled="{Binding AppInsightsStatus.IsBusy}"
+                                    Content="Cancel"
+                                    ToolTip.Tip="Stop waiting for the browser to come back"/>
+                            <Button Command="{Binding SignOutOfAzureCommand}"
+                                    IsEnabled="{Binding AppInsightsAccount, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                    Content="Sign out"/>
                         </StackPanel>
 
-                        <TextBox Text="{Binding PipelineFilter}" PlaceholderText="🔍 Filter pipelines…"
-                                 IsVisible="{Binding AvailablePipelines.Count}"/>
+                        <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
+                            <Button Grid.Column="0" Command="{Binding TestConnectionCommand}"
+                                    CommandParameter="{x:Static models:ConnectionKind.AppInsights}"
+                                    IsEnabled="{Binding !AppInsightsStatus.IsBusy}"
+                                    Content="Test connection"/>
+                            <TextBlock Grid.Column="1" Text="{Binding AppInsightsStatus.Glyph}" FontSize="14"
+                                       VerticalAlignment="Center" Margin="10,0,6,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding AppInsightsStatus.StateText}" FontSize="12"
+                                       VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
+                        </Grid>
 
-                        <Border MaxHeight="200" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1" CornerRadius="4"
-                                IsVisible="{Binding AvailablePipelines.Count}">
-                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding FilteredPipelines}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:SelectablePipeline">
-                                            <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
-                                                <TextBlock Text="{Binding DisplayName}" FontSize="12"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                            </CheckBox>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Border>
+                        <Separator Margin="0,4"/>
+                        <TextBlock Text="What to watch" FontSize="12" FontWeight="SemiBold" Opacity="0.8"/>
+                        <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                  Header="Application Insights resources">
+                            <StackPanel Spacing="8" Margin="0,8,0,0">
+                                <TextBlock Text="Watch these resources for failures and slowdowns:" FontSize="11" Opacity="0.5"/>
+
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Command="{Binding LoadComponentsCommand}" Content="⟳"
+                                            FontSize="14" Width="32" HorizontalContentAlignment="Center"
+                                            IsEnabled="{Binding !IsLoadingComponents}"
+                                            ToolTip.Tip="Refresh the resource list"/>
+                                    <TextBlock Text="{Binding ComponentPickerStatus}" FontSize="12"
+                                               VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <TextBox Text="{Binding ComponentFilter}" PlaceholderText="🔍 Filter resources…"
+                                         IsVisible="{Binding AvailableComponents.Count}"/>
+
+                                <Border MaxHeight="200" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="4"
+                                        IsVisible="{Binding AvailableComponents.Count}">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding FilteredComponents}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:SelectableComponent">
+                                                    <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayName}" FontSize="12"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding Qualifier}" FontSize="10" Opacity="0.5"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                        </StackPanel>
+                                                    </CheckBox>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                        </Expander>
+
+                        <Expander Header="Advanced" HorizontalAlignment="Stretch"
+                                  HorizontalContentAlignment="Stretch" Margin="0,4,0,0">
+                            <StackPanel Spacing="8" Margin="0,8,0,0">
+                                <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                                           Text="Leave both of these empty unless someone has told you otherwise. Signing in without them uses the account and tenant you normally log in with."/>
+
+                                <TextBlock Text="Tenant ID" FontSize="12" Opacity="0.7"/>
+                                <TextBox Text="{Binding AppInsightsTenantId}"
+                                         PlaceholderText="empty: your usual tenant"/>
+                                <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                                           Text="Only needed to reach a tenant you are not normally signed in to."/>
+
+                                <TextBlock Text="Application (client) ID" FontSize="12" Opacity="0.7"/>
+                                <TextBox Text="{Binding AppInsightsClientId}"
+                                         PlaceholderText="empty: the built-in Azure sign-in app"/>
+                                <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                                           Text="Only needed if sign-in is refused because the built-in app is not approved, in which case paste your own app registration id."/>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </Expander>
 
