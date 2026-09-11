@@ -16,4 +16,7 @@ public interface INotificationService
 
     /// <summary>A Sentry issue that is new, or has returned after being resolved.</summary>
     void ShowSentryIssue(string title, string project, string impact, string url, bool isRegression);
+
+    /// <summary>A newly detected problem on a monitored service.</summary>
+    void ShowServiceFinding(string subject, string resource, string detail);
 }

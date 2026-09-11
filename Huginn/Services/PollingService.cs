@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Huginn.Models;
@@ -17,14 +18,17 @@ public sealed class PollingService : IDisposable
     private CancellationTokenSource? _cts;
     private Task? _adoLoop;
     private Task? _sentryLoop;
+    private Task? _appInsightsLoop;
     private volatile bool _authFailed;
     private readonly AppSettings _settings;
     private readonly PrMonitor _prMonitor = new();
     private readonly BuildMonitor _buildMonitor = new();
     private readonly SentryMonitor _sentryMonitor = new();
     private SentryApiClient? _sentry;
+    private readonly AppInsightsMonitor _appInsightsMonitor = new();
     private readonly SemaphoreSlim _pollLock = new(1, 1);
     private readonly SemaphoreSlim _sentryLock = new(1, 1);
+    private readonly SemaphoreSlim _appInsightsLock = new(1, 1);
 
     public event Action<PollResult>? PollCompleted;
     public event Action<PullRequestItem>? NewPullRequestDetected;
@@ -86,6 +90,8 @@ public sealed class PollingService : IDisposable
         // the fast one only re-reads the same data.
         _adoLoop = LoopAsync(PollAzureDevOpsOnceAsync, () => _settings.PollIntervalMinutes, _cts.Token);
         _sentryLoop = LoopAsync(PollSentryOnceAsync, () => _settings.SentryPollIntervalMinutes, _cts.Token);
+        _appInsightsLoop = LoopAsync(
+            PollAppInsightsOnceAsync, () => _settings.AppInsightsPollIntervalMinutes, _cts.Token);
         return true;
     }
 
@@ -101,6 +107,7 @@ public sealed class PollingService : IDisposable
         _prMonitor.Reset();
         _buildMonitor.Reset();
         _sentryMonitor.Reset();
+        _appInsightsMonitor.Reset();
     }
 
     /// <summary>
@@ -122,10 +129,59 @@ public sealed class PollingService : IDisposable
 
     public event Action<string>? SentryFailed;
     public event Action<List<SentryIssueItem>>? SentryPolled;
+    public event Action<ServiceFinding>? NewServiceFindingDetected;
+    public event Action<string>? AppInsightsFailed;
+    public event Action<List<ServiceFinding>>? AppInsightsPolled;
 
     /// <summary>Refreshes every source at once, for the Refresh button.</summary>
     public Task PollNowAsync(CancellationToken ct = default) =>
-        Task.WhenAll(PollAzureDevOpsOnceAsync(ct), PollSentryOnceAsync(ct));
+        Task.WhenAll(PollAzureDevOpsOnceAsync(ct), PollSentryOnceAsync(ct), PollAppInsightsOnceAsync(ct));
+
+    /// <summary>
+    /// Examines the watched Application Insights resources. Like Sentry, it reports its own
+    /// failures rather than throwing, so it cannot take another source down with it.
+    /// </summary>
+    private async Task PollAppInsightsOnceAsync(CancellationToken ct = default)
+    {
+        if (_settings.WatchedAppInsights.Count == 0) return;
+        if (!await _appInsightsLock.WaitAsync(0, ct)) return;
+
+        try
+        {
+            var signIn = new AzureSignIn(
+                "appinsights", _settings.AppInsightsTenantId, _settings.AppInsightsClientId);
+
+            if (!signIn.HasStoredAccount)
+            {
+                AppInsightsFailed?.Invoke("Not signed in");
+                return;
+            }
+
+            // Background polling never prompts: a browser window appearing unbidden every
+            // quarter of an hour would be worse than going quiet and saying so.
+            var (credential, _) = await signIn.GetCredentialAsync(allowPrompt: false, ct);
+            using var client = new AppInsightsApiClient(credential);
+
+            var components = _settings.WatchedAppInsights
+                .Select(w => new AppInsightsComponent { AppId = w.Key, Name = w.Value })
+                .ToList();
+
+            var snapshot = await _appInsightsMonitor.PollAsync(client, components, _settings, ct);
+
+            AppInsightsPolled?.Invoke(snapshot.Findings);
+            foreach (var finding in snapshot.NewFindings)
+                NewServiceFindingDetected?.Invoke(finding);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            AppInsightsFailed?.Invoke(ex.Message);
+        }
+        finally
+        {
+            _appInsightsLock.Release();
+        }
+    }
 
     private async Task PollAzureDevOpsOnceAsync(CancellationToken ct = default)
     {
@@ -258,5 +314,6 @@ public sealed class PollingService : IDisposable
         Stop();
         _pollLock.Dispose();
         _sentryLock.Dispose();
+        _appInsightsLock.Dispose();
     }
 }

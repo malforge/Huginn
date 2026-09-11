@@ -66,6 +66,22 @@ public class WinToastService : INotificationService
         }
     }
 
+    public void ShowServiceFinding(string subject, string resource, string detail)
+    {
+        try
+        {
+            new ToastContentBuilder()
+                .AddText("📉 Service problem")
+                .AddText(subject)
+                .AddText($"{resource} · {detail}")
+                .Show();
+        }
+        catch
+        {
+            // Toast failures are non-critical
+        }
+    }
+
     public void ShowSentryIssue(string title, string project, string impact, string url, bool isRegression)
     {
         try

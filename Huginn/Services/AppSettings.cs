@@ -48,6 +48,20 @@ public sealed partial class AppSettings
     /// </summary>
     public Dictionary<string, string> FlaggedSentryIssues { get; set; } = [];
 
+    /// <summary>
+    /// Service findings the user has muted, keyed by finding id, holding how bad each was at the
+    /// time. Kept separate from the Sentry equivalents rather than unified, because renaming
+    /// persisted keys would silently discard whatever is already muted.
+    /// </summary>
+    public Dictionary<string, double> MutedFindings { get; set; } = [];
+
+    /// <summary>Findings raised and not yet dismissed, keyed by finding id with the reason.</summary>
+    public Dictionary<string, string> FlaggedFindings { get; set; } = [];
+
+    /// <summary>How often Application Insights is examined. These are aggregate queries over a
+    /// window, so a faster cadence mostly re-reads the same numbers.</summary>
+    public int AppInsightsPollIntervalMinutes { get; set; } = 15;
+
     // Application Insights
     public string AppInsightsTenantId { get; set; } = "";
 
@@ -57,7 +71,8 @@ public sealed partial class AppSettings
     /// </summary>
     public string AppInsightsClientId { get; set; } = "";
 
-    public List<string> WatchedAppInsightsAppIds { get; set; } = [];
+    /// <summary>Watched resources, keyed by query app id with the resource name as the value.</summary>
+    public Dictionary<string, string> WatchedAppInsights { get; set; } = [];
 
     // Window state (only size/position are recorded when in Normal state)
     public double? WindowX { get; set; }
@@ -87,7 +102,7 @@ public sealed partial class AppSettings
         && !string.IsNullOrWhiteSpace(GetPat());
 
     /// <summary>The Application Insights connection has a signed-in account and something to watch.</summary>
-    public bool IsAppInsightsConfigured => WatchedAppInsightsAppIds.Count > 0;
+    public bool IsAppInsightsConfigured => WatchedAppInsights.Count > 0;
 
     /// <summary>The Sentry connection has everything it needs to attempt a poll.</summary>
     public bool IsSentryConfigured =>
@@ -233,6 +248,54 @@ public sealed partial class AppSettings
     public string GetSentryFlagReason(string issueId) =>
         FlaggedSentryIssues.TryGetValue(issueId, out string? reason) ? reason : "";
 
+    public void MuteFinding(string id, double magnitude)
+    {
+        MutedFindings[id] = magnitude;
+        Save();
+    }
+
+    public void UnmuteFinding(string id)
+    {
+        if (MutedFindings.Remove(id)) Save();
+    }
+
+    public bool IsFindingMuted(string id) => MutedFindings.ContainsKey(id);
+
+    public double GetFindingMutedAt(string id) =>
+        MutedFindings.TryGetValue(id, out double at) ? at : 0;
+
+    /// <summary>True when a muted finding has grown enough to be worth raising again.</summary>
+    public bool HasFindingOutgrownMute(string id, double magnitude, double factor)
+    {
+        if (!MutedFindings.TryGetValue(id, out double muted)) return false;
+        return muted <= 0 ? magnitude > 0 : magnitude >= muted * factor;
+    }
+
+    public void FlagFinding(string id, string reason)
+    {
+        if (FlaggedFindings.ContainsKey(id)) return;
+        FlaggedFindings[id] = reason;
+        Save();
+    }
+
+    public void DismissFinding(string id)
+    {
+        if (FlaggedFindings.Remove(id)) Save();
+    }
+
+    public bool IsFindingFlagged(string id) => FlaggedFindings.ContainsKey(id);
+
+    public string GetFindingFlagReason(string id) =>
+        FlaggedFindings.TryGetValue(id, out string? reason) ? reason : "";
+
+    /// <summary>Drops flags for findings that no longer appear.</summary>
+    public void PruneFindingFlags(HashSet<string> alive)
+    {
+        List<string> gone = FlaggedFindings.Keys.Where(id => !alive.Contains(id)).ToList();
+        foreach (string id in gone) FlaggedFindings.Remove(id);
+        if (gone.Count > 0) Save();
+    }
+
     /// <summary>Drops flags for issues that no longer come back from Sentry at all.</summary>
     public void PruneSentryFlags(HashSet<string> aliveIssueIds)
     {
@@ -263,9 +326,12 @@ public sealed partial class AppSettings
             WatchedSentryProjects = WatchedSentryProjects,
             MutedSentryIssues = MutedSentryIssues,
             FlaggedSentryIssues = FlaggedSentryIssues,
+            MutedFindings = MutedFindings,
+            FlaggedFindings = FlaggedFindings,
+            AppInsightsPollIntervalMinutes = AppInsightsPollIntervalMinutes,
             AppInsightsTenantId = AppInsightsTenantId,
             AppInsightsClientId = AppInsightsClientId,
-            WatchedAppInsightsAppIds = WatchedAppInsightsAppIds,
+            WatchedAppInsights = WatchedAppInsights,
             WindowX = WindowX,
             WindowY = WindowY,
             WindowWidth = WindowWidth,
@@ -304,9 +370,13 @@ public sealed partial class AppSettings
                 WatchedSentryProjects = dto.WatchedSentryProjects ?? [],
                 MutedSentryIssues = dto.MutedSentryIssues ?? [],
                 FlaggedSentryIssues = dto.FlaggedSentryIssues ?? [],
+                MutedFindings = dto.MutedFindings ?? [],
+                FlaggedFindings = dto.FlaggedFindings ?? [],
+                AppInsightsPollIntervalMinutes =
+                    dto.AppInsightsPollIntervalMinutes > 0 ? dto.AppInsightsPollIntervalMinutes : 15,
                 AppInsightsTenantId = dto.AppInsightsTenantId ?? "",
                 AppInsightsClientId = dto.AppInsightsClientId ?? "",
-                WatchedAppInsightsAppIds = dto.WatchedAppInsightsAppIds ?? [],
+                WatchedAppInsights = dto.WatchedAppInsights ?? [],
                 WindowX = dto.WindowX,
                 WindowY = dto.WindowY,
                 WindowWidth = dto.WindowWidth,
@@ -335,9 +405,12 @@ public sealed partial class AppSettings
         public List<string>? WatchedSentryProjects { get; set; }
         public Dictionary<string, SentryAcknowledgement>? MutedSentryIssues { get; set; }
         public Dictionary<string, string>? FlaggedSentryIssues { get; set; }
+        public Dictionary<string, double>? MutedFindings { get; set; }
+        public Dictionary<string, string>? FlaggedFindings { get; set; }
+        public int AppInsightsPollIntervalMinutes { get; set; } = 15;
         public string? AppInsightsTenantId { get; set; }
         public string? AppInsightsClientId { get; set; }
-        public List<string>? WatchedAppInsightsAppIds { get; set; }
+        public Dictionary<string, string>? WatchedAppInsights { get; set; }
         public double? WindowX { get; set; }
         public double? WindowY { get; set; }
         public double? WindowWidth { get; set; }

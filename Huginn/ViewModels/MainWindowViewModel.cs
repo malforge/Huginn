@@ -43,6 +43,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// <summary>One section per watched Sentry project, since each is a separate app.</summary>
     public ObservableCollection<SentryProjectGroup> SentryGroups { get; } = [];
 
+    /// <summary>One section per watched Application Insights resource.</summary>
+    public ObservableCollection<ServiceFindingGroup> ServiceGroups { get; } = [];
+
     /// <summary>Health of every source, in the order they appear in settings.</summary>
     public ObservableCollection<ConnectionStatus> Connections { get; } = [];
 
@@ -121,6 +124,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// rather than on PollResult. Either source can repaint without waiting for the other.
     /// </summary>
     private List<SentryIssueItem> _lastSentryIssues = [];
+
+    /// <summary>Application Insights publishes on its own cadence, so it keeps its own result.</summary>
+    private List<ServiceFinding> _lastFindings = [];
 
     public MainWindowViewModel(AppSettings settings, INotificationService notifications)
     {
@@ -279,8 +285,15 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         SaveSentryConnection();
         SaveAppInsightsConnection();
         _settings.MonitorMyBuilds = MonitorMyBuilds;
-        _settings.WatchedPipelineIds = AvailablePipelines
-            .Where(p => p.IsSelected).Select(p => p.Id).ToList();
+
+        // Only when the picker actually holds the list. Deriving from an empty collection would
+        // silently erase the selection every time the list failed to load.
+        if (AvailablePipelines.Count > 0)
+        {
+            _settings.WatchedPipelineIds = AvailablePipelines
+                .Where(p => p.IsSelected).Select(p => p.Id).ToList();
+        }
+
         _settings.Save();
     }
 
@@ -496,6 +509,69 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Clears a raised alert, which is what lets the issue fall back into plain impact order.
     /// </summary>
+    /// <summary>Rebuilds the per-resource sections from the last Application Insights poll.</summary>
+    private void RebuildServiceGroups()
+    {
+        foreach (var finding in _lastFindings)
+        {
+            finding.IsMuted = _settings.IsFindingMuted(finding.Id);
+            finding.IsFlagged = _settings.IsFindingFlagged(finding.Id);
+            finding.FlagReason = _settings.GetFindingFlagReason(finding.Id);
+            finding.MutedAtMagnitude = _settings.GetFindingMutedAt(finding.Id);
+        }
+
+        foreach (var byResource in _lastFindings.GroupBy(f => f.ResourceName).OrderBy(g => g.Key))
+        {
+            var group = ServiceGroups.FirstOrDefault(g => g.ResourceName == byResource.Key);
+            if (group is null)
+            {
+                group = new ServiceFindingGroup { ResourceName = byResource.Key };
+                ServiceGroups.Add(group);
+            }
+
+            group.SetFindings([.. byResource]);
+        }
+
+        var live = _lastFindings.Select(f => f.ResourceName).ToHashSet();
+        for (var i = ServiceGroups.Count - 1; i >= 0; i--)
+        {
+            if (!live.Contains(ServiceGroups[i].ResourceName)) ServiceGroups.RemoveAt(i);
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleServiceFindingMuted(ServiceFinding? finding)
+    {
+        if (finding is null) return;
+
+        if (finding.IsMuted)
+        {
+            _settings.UnmuteFinding(finding.Id);
+            finding.IsMuted = false;
+        }
+        else
+        {
+            // Muting settles the alert too, as it does for Sentry.
+            _settings.MuteFinding(finding.Id, finding.Magnitude);
+            _settings.DismissFinding(finding.Id);
+            finding.IsMuted = true;
+            finding.IsFlagged = false;
+            finding.FlagReason = "";
+        }
+
+        RebuildServiceGroups();
+    }
+
+    [RelayCommand]
+    private void DismissServiceFinding(ServiceFinding? finding)
+    {
+        if (finding is null) return;
+        _settings.DismissFinding(finding.Id);
+        finding.IsFlagged = false;
+        finding.FlagReason = "";
+        RebuildServiceGroups();
+    }
+
     [RelayCommand]
     private void DismissSentryIssue(SentryIssueItem? issue)
     {
@@ -627,7 +703,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var watched = _settings.WatchedAppInsightsAppIds.Count;
+        var watched = _settings.WatchedAppInsights.Count;
         AppInsightsStatus.Set(
             watched > 0 ? ConnectionState.Connected : ConnectionState.NotConfigured,
             watched > 0
@@ -671,7 +747,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
             var selected = new HashSet<string>(
                 AvailableComponents.Where(c => c.IsSelected).Select(c => c.AppId));
-            foreach (var id in _settings.WatchedAppInsightsAppIds)
+            foreach (var id in _settings.WatchedAppInsights.Keys)
                 selected.Add(id);
 
             AvailableComponents.Clear();
@@ -716,8 +792,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void PersistWatchedComponents()
     {
-        _settings.WatchedAppInsightsAppIds = AvailableComponents
-            .Where(c => c.IsSelected).Select(c => c.AppId).ToList();
+        _settings.WatchedAppInsights = AvailableComponents
+            .Where(c => c.IsSelected)
+            .ToDictionary(c => c.AppId, c => c.DisplayName);
         _settings.Save();
         ReportAppInsightsState();
     }
@@ -745,7 +822,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         var watched = AvailableComponents.Where(c => c.IsSelected).Select(c => c.AppId).ToList();
-        if (watched.Count == 0) watched = _settings.WatchedAppInsightsAppIds;
+        if (watched.Count == 0) watched = [.. _settings.WatchedAppInsights.Keys];
         if (watched.Count == 0)
         {
             AppInsightsStatus.Set(ConnectionState.NotConfigured, "Pick at least one resource to watch");
@@ -841,8 +918,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         _settings.AppInsightsTenantId = AppInsightsTenantId.Trim();
         _settings.AppInsightsClientId = AppInsightsClientId.Trim();
-        _settings.WatchedAppInsightsAppIds = AvailableComponents
-            .Where(c => c.IsSelected).Select(c => c.AppId).ToList();
         _settings.Save();
     }
 
@@ -1126,6 +1201,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.SentryEscalationDetected += OnSentryEscalationDetected;
         _poller.SentryFailed += OnSentryFailed;
         _poller.SentryPolled += OnSentryPolled;
+        _poller.AppInsightsPolled += OnAppInsightsPolled;
+        _poller.AppInsightsFailed += OnAppInsightsFailed;
+        _poller.NewServiceFindingDetected += OnNewServiceFindingDetected;
         _poller.StatusChanged += OnStatusChanged;
         _poller.ErrorOccurred += OnErrorOccurred;
 
@@ -1188,6 +1266,31 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 : $"Connected, {active} unresolved, {muted} muted");
         });
 
+    private void OnAppInsightsPolled(List<ServiceFinding> findings)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            _lastFindings = findings;
+            RebuildServiceGroups();
+
+            var active = findings.Count(f => !f.IsMuted);
+            AppInsightsStatus.Set(
+                ConnectionState.Connected,
+                active == 0
+                    ? $"{AppInsightsAccount}, nothing wrong"
+                    : $"{AppInsightsAccount}, {active} finding{(active == 1 ? "" : "s")}");
+        });
+
+    private void OnAppInsightsFailed(string msg)
+        => Dispatcher.UIThread.Post(() => AppInsightsStatus.Set(
+            msg.Contains("signed in", StringComparison.OrdinalIgnoreCase)
+                ? ConnectionState.AuthFailed
+                : ConnectionState.Error,
+            msg));
+
+    private void OnNewServiceFindingDetected(ServiceFinding finding)
+        => Dispatcher.UIThread.Post(() => _notifications.ShowServiceFinding(
+            finding.Subject, finding.ResourceName, finding.Detail));
+
     private void OnStatusChanged(string msg)
         => Dispatcher.UIThread.Post(() => StatusText = msg);
 
@@ -1234,6 +1337,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.SentryEscalationDetected -= OnSentryEscalationDetected;
         _poller.SentryFailed -= OnSentryFailed;
         _poller.SentryPolled -= OnSentryPolled;
+        _poller.AppInsightsPolled -= OnAppInsightsPolled;
+        _poller.AppInsightsFailed -= OnAppInsightsFailed;
+        _poller.NewServiceFindingDetected -= OnNewServiceFindingDetected;
         _poller.StatusChanged -= OnStatusChanged;
         _poller.ErrorOccurred -= OnErrorOccurred;
     }
