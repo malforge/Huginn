@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="using:Huginn.Models"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="600"
+             x:Class="Huginn.Views.SentryIssueCardView"
+             x:DataType="models:SentryIssueItem"
+             x:Name="root">
+
+    <Border Margin="0,2" Padding="10,6" CornerRadius="4"
+            Opacity="{Binding CardOpacity}"
+            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+
+            <TextBlock Grid.Column="0" Text="{Binding LevelIcon}" FontSize="16"
+                       VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis"
+                           Text="{Binding Subtitle}"/>
+                <TextBlock FontSize="11" Opacity="0.75" IsVisible="{Binding HasRelease}"
+                           Text="{Binding ReleaseSummary}" TextTrimming="CharacterEllipsis"/>
+                <TextBlock FontSize="10" Opacity="0.5" IsVisible="{Binding IsMuted}"
+                           TextTrimming="CharacterEllipsis">
+                    <Run Text="muted at"/>
+                    <Run Text="{Binding MutedAtUserCount}"/>
+                    <Run Text="users · returns if it doubles or regresses"/>
+                </TextBlock>
+            </StackPanel>
+
+            <Border Grid.Column="2" IsVisible="{Binding HasFlagReason}"
+                    Background="#3344AAFF" BorderBrush="#8844AAFF" BorderThickness="1"
+                    CornerRadius="3" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding FlagReason}" FontSize="10" Foreground="#FF3399DD"/>
+            </Border>
+
+            <Border Grid.Column="3" IsVisible="{Binding IsRegression}"
+                    Background="#44FF8800" BorderBrush="#AAFF8800" BorderThickness="1"
+                    CornerRadius="3" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="regressed" FontSize="10" Foreground="#FFCC6600"/>
+            </Border>
+
+            <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6"
+                        VerticalAlignment="Center" Margin="8,0,0,0">
+                <Button Content="Dismiss" FontSize="11"
+                        IsVisible="{Binding IsFlagged}"
+                        Command="{Binding #root.DismissCommand}"
+                        CommandParameter="{Binding}"
+                        ToolTip.Tip="Stop pinning this to the top. It stays in the list."/>
+                <Button Content="{Binding MuteLabel}" FontSize="11"
+                        Command="{Binding #root.MuteCommand}"
+                        CommandParameter="{Binding}"
+                        ToolTip.Tip="{Binding MuteTooltip}"/>
+                <Button Content="Open in Sentry ↗" FontSize="11"
+                        Command="{Binding #root.OpenCommand}"
+                        CommandParameter="{Binding}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

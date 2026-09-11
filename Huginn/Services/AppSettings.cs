@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Huginn.Models;
 
 namespace Huginn.Services;
 
@@ -28,6 +30,17 @@ public sealed partial class AppSettings
     public string SentryOrganization { get; set; } = "";
     public string SentryRegionUrl { get; set; } = "https://sentry.io";
     public List<string> WatchedSentryProjects { get; set; } = [];
+
+    /// <summary>
+    /// Sentry issues the user has muted, keyed by issue id, holding how big each was at the time.
+    /// </summary>
+    public Dictionary<string, SentryAcknowledgement> MutedSentryIssues { get; set; } = [];
+
+    /// <summary>
+    /// Issues Huginn has raised and the user has not dismissed, keyed by issue id with the reason
+    /// it was raised. Persisted, because an alert the user never saw must survive a restart.
+    /// </summary>
+    public Dictionary<string, string> FlaggedSentryIssues { get; set; } = [];
 
     // Application Insights
     public string AppInsightsTenantId { get; set; } = "";
@@ -150,6 +163,72 @@ public sealed partial class AppSettings
         if (changed) Save();
     }
 
+    /// <summary>
+    /// Mutes a Sentry issue at its current size. It stays muted until it regresses or roughly
+    /// doubles, so an unfixable crash goes quiet without going silent for good.
+    /// </summary>
+    public void MuteSentryIssue(string issueId, int userCount, int eventCount)
+    {
+        MutedSentryIssues[issueId] = new SentryAcknowledgement
+        {
+            UserCount = userCount,
+            EventCount = eventCount,
+        };
+        Save();
+    }
+
+    public void UnmuteSentryIssue(string issueId)
+    {
+        if (MutedSentryIssues.Remove(issueId)) Save();
+    }
+
+    /// <summary>Factor by which a muted issue must grow before it is worth raising again.</summary>
+    private const int EscalationFactor = 2;
+
+    /// <summary>
+    /// True when a muted issue has grown enough, or returned, that the mute should be lifted.
+    /// </summary>
+    public bool HasOutgrownMute(string issueId, int userCount, int eventCount, bool isRegression)
+    {
+        if (!MutedSentryIssues.TryGetValue(issueId, out SentryAcknowledgement? muted)) return false;
+        if (isRegression) return true;
+
+        // Guard the zero case: something muted at no users escalates on its first user.
+        if (muted.UserCount == 0 && muted.EventCount == 0) return userCount > 0 || eventCount > 0;
+
+        return userCount >= muted.UserCount * EscalationFactor
+            || eventCount >= muted.EventCount * EscalationFactor;
+    }
+
+    public bool IsSentryIssueMuted(string issueId) => MutedSentryIssues.ContainsKey(issueId);
+
+    /// <summary>Raises an issue so it stays at the top of the list until it is dismissed.</summary>
+    public void FlagSentryIssue(string issueId, string reason)
+    {
+        // An issue already raised keeps its original reason: "new" then "worse" is still new.
+        if (FlaggedSentryIssues.ContainsKey(issueId)) return;
+        FlaggedSentryIssues[issueId] = reason;
+        Save();
+    }
+
+    public void DismissSentryIssue(string issueId)
+    {
+        if (FlaggedSentryIssues.Remove(issueId)) Save();
+    }
+
+    public bool IsSentryIssueFlagged(string issueId) => FlaggedSentryIssues.ContainsKey(issueId);
+
+    public string GetSentryFlagReason(string issueId) =>
+        FlaggedSentryIssues.TryGetValue(issueId, out string? reason) ? reason : "";
+
+    /// <summary>Drops flags for issues that no longer come back from Sentry at all.</summary>
+    public void PruneSentryFlags(HashSet<string> aliveIssueIds)
+    {
+        List<string> gone = FlaggedSentryIssues.Keys.Where(id => !aliveIssueIds.Contains(id)).ToList();
+        foreach (string id in gone) FlaggedSentryIssues.Remove(id);
+        if (gone.Count > 0) Save();
+    }
+
     /// <summary>Drop acknowledgements for items that no longer appear in poll results.</summary>
     public void PruneAcknowledgements(HashSet<int> aliveBuildIds, HashSet<int> alivePrIds)
     {
@@ -169,6 +248,8 @@ public sealed partial class AppSettings
             SentryOrganization = SentryOrganization,
             SentryRegionUrl = SentryRegionUrl,
             WatchedSentryProjects = WatchedSentryProjects,
+            MutedSentryIssues = MutedSentryIssues,
+            FlaggedSentryIssues = FlaggedSentryIssues,
             AppInsightsTenantId = AppInsightsTenantId,
             AppInsightsClientId = AppInsightsClientId,
             WatchedAppInsightsAppIds = WatchedAppInsightsAppIds,
@@ -206,6 +287,8 @@ public sealed partial class AppSettings
                     ? "https://sentry.io"
                     : dto.SentryRegionUrl,
                 WatchedSentryProjects = dto.WatchedSentryProjects ?? [],
+                MutedSentryIssues = dto.MutedSentryIssues ?? [],
+                FlaggedSentryIssues = dto.FlaggedSentryIssues ?? [],
                 AppInsightsTenantId = dto.AppInsightsTenantId ?? "",
                 AppInsightsClientId = dto.AppInsightsClientId ?? "",
                 WatchedAppInsightsAppIds = dto.WatchedAppInsightsAppIds ?? [],
@@ -234,6 +317,8 @@ public sealed partial class AppSettings
         public string? SentryOrganization { get; set; }
         public string? SentryRegionUrl { get; set; }
         public List<string>? WatchedSentryProjects { get; set; }
+        public Dictionary<string, SentryAcknowledgement>? MutedSentryIssues { get; set; }
+        public Dictionary<string, string>? FlaggedSentryIssues { get; set; }
         public string? AppInsightsTenantId { get; set; }
         public string? AppInsightsClientId { get; set; }
         public List<string>? WatchedAppInsightsAppIds { get; set; }

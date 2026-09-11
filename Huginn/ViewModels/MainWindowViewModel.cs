@@ -40,6 +40,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     public ObservableCollection<BuildItem> RetryingBuilds { get; } = [];
     public ObservableCollection<PullRequestItem> AcknowledgedPrs { get; } = [];
     public ObservableCollection<BuildItem> AcknowledgedBuilds { get; } = [];
+    public ObservableCollection<SentryIssueItem> SentryIssues { get; } = [];
 
     /// <summary>Health of every source, in the order they appear in settings.</summary>
     public ObservableCollection<ConnectionStatus> Connections { get; } = [];
@@ -65,6 +66,18 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _hasFailedBuilds;
     [ObservableProperty] private bool _hasRetryingBuilds;
     [ObservableProperty] private bool _hasAcknowledged;
+    [ObservableProperty] private bool _hasSentryIssues;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMutedSentryIssues))]
+    private int _mutedSentryCount;
+
+    public bool HasMutedSentryIssues => MutedSentryCount > 0;
+
+    /// <summary>
+    /// Swaps the list over to the muted issues. It filters rather than appends, because appending
+    /// would put a heavily muted issue below a trivial live one and break the impact ordering.
+    /// </summary>
+    [ObservableProperty] private bool _showMutedSentryIssues;
     [ObservableProperty] private bool _isSettingsVisible;
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private bool _isRefreshing;
@@ -99,6 +112,11 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _pipelinePickerTooltip = "";
     [ObservableProperty] private string _pipelineFilter = "";
 
+    // Sentry project picker
+    public ObservableCollection<SelectableSentryProject> AvailableSentryProjects { get; } = [];
+    [ObservableProperty] private bool _isLoadingSentryProjects;
+    [ObservableProperty] private string _sentryProjectPickerStatus = "";
+
     // Application Insights component picker
     public ObservableCollection<SelectableComponent> AvailableComponents { get; } = [];
     public ObservableCollection<SelectableComponent> FilteredComponents { get; } = [];
@@ -108,6 +126,12 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     // Cached data for re-categorization on filter change
     private PollResult? _lastPollResult;
+
+    /// <summary>
+    /// Sentry publishes separately from the Azure DevOps poll, so its last result is held here
+    /// rather than on PollResult. Either source can repaint without waiting for the other.
+    /// </summary>
+    private List<SentryIssueItem> _lastSentryIssues = [];
 
     public MainWindowViewModel(AppSettings settings, INotificationService notifications)
     {
@@ -278,6 +302,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
+    partial void OnShowMutedSentryIssuesChanged(bool value) => RebuildSentryList();
+
     partial void OnShowApprovedChanged(bool value)
     {
         if (_lastPollResult != null)
@@ -313,6 +339,138 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 ? (ConnectionState.AuthFailed, "Auth failed, check your PAT")
                 : (ConnectionState.Connected, $"Connected as {userId[..Math.Min(8, userId.Length)]}…");
         }, SaveAdoConnection);
+    }
+
+    [RelayCommand]
+    private async Task LoadSentryProjectsAsync()
+    {
+        if (!_settings.IsSentryConfigured
+            && (string.IsNullOrWhiteSpace(SentryOrganization) || string.IsNullOrWhiteSpace(SentryToken)))
+        {
+            SentryProjectPickerStatus = "Enter the organisation and token first";
+            return;
+        }
+
+        IsLoadingSentryProjects = true;
+        SentryProjectPickerStatus = "Loading projects…";
+        try
+        {
+            var region = string.IsNullOrWhiteSpace(SentryRegionUrl) ? "https://sentry.io" : SentryRegionUrl.Trim();
+            using var client = new SentryApiClient($"{region.TrimEnd('/')}/api/0", SentryToken.Trim());
+            var slugs = await client.GetProjectSlugsAsync(SentryOrganization.Trim());
+
+            var selected = new HashSet<string>(
+                AvailableSentryProjects.Where(p => p.IsSelected).Select(p => p.Slug));
+            foreach (var slug in _settings.WatchedSentryProjects)
+                selected.Add(slug);
+
+            AvailableSentryProjects.Clear();
+            foreach (var slug in slugs)
+            {
+                AvailableSentryProjects.Add(new SelectableSentryProject
+                {
+                    Slug = slug,
+                    IsSelected = selected.Contains(slug),
+                });
+            }
+
+            SentryProjectPickerStatus = $"{slugs.Count} project{(slugs.Count != 1 ? "s" : "")} found";
+        }
+        catch (Exception ex)
+        {
+            SentryProjectPickerStatus = ex.Message;
+        }
+        finally
+        {
+            IsLoadingSentryProjects = false;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the visible issue list from the last poll. Separate from the poll handler so the
+    /// filter can be flipped without re-running everything else.
+    /// </summary>
+    private void RebuildSentryList()
+    {
+        var issues = _lastSentryIssues;
+
+        // Naming the project only earns its space when more than one is in view.
+        var multipleProjects = issues.Select(i => i.ProjectSlug).Distinct().Count() > 1;
+
+        var muted = 0;
+        foreach (var issue in issues)
+        {
+            issue.ShowProject = multipleProjects;
+            issue.IsMuted = _settings.IsSentryIssueMuted(issue.Id);
+            issue.IsFlagged = _settings.IsSentryIssueFlagged(issue.Id);
+            issue.FlagReason = _settings.GetSentryFlagReason(issue.Id);
+            if (issue.IsMuted) muted++;
+        }
+
+        MutedSentryCount = muted;
+
+        // Unmuting the last one would otherwise leave the muted-only view showing an empty box
+        // with no obvious way back. Setting this re-enters once and settles.
+        if (ShowMutedSentryIssues && muted == 0)
+        {
+            ShowMutedSentryIssues = false;
+            return;
+        }
+
+        SentryIssues.Clear();
+        foreach (var issue in issues)
+        {
+            // Each side keeps the order the monitor put them in, rather than interleaving two
+            // rankings into one confusing list.
+            if (issue.IsMuted == ShowMutedSentryIssues) SentryIssues.Add(issue);
+        }
+
+        HasSentryIssues = issues.Count > 0;
+    }
+
+    [RelayCommand]
+    private void ToggleSentryIssueMuted(SentryIssueItem? issue)
+    {
+        if (issue is null) return;
+
+        if (issue.IsMuted)
+        {
+            _settings.UnmuteSentryIssue(issue.Id);
+            issue.IsMuted = false;
+            issue.MutedAtUserCount = 0;
+        }
+        else
+        {
+            // Muting is a stronger answer than dismissing, so it settles the alert too.
+            _settings.MuteSentryIssue(issue.Id, issue.UserCount, issue.EventCount);
+            _settings.DismissSentryIssue(issue.Id);
+            issue.IsMuted = true;
+            issue.IsFlagged = false;
+            issue.FlagReason = "";
+            issue.MutedAtUserCount = issue.UserCount;
+        }
+
+        RebuildSentryList();
+    }
+
+    /// <summary>
+    /// Clears a raised alert, which is what lets the issue fall back into plain impact order.
+    /// </summary>
+    [RelayCommand]
+    private void DismissSentryIssue(SentryIssueItem? issue)
+    {
+        if (issue is null) return;
+        _settings.DismissSentryIssue(issue.Id);
+        issue.IsFlagged = false;
+        issue.FlagReason = "";
+        RebuildSentryList();
+    }
+
+    [RelayCommand]
+    private void OpenSentryIssue(SentryIssueItem? issue)
+    {
+        if (issue is null || string.IsNullOrEmpty(issue.Permalink)) return;
+        OpenUrl(issue.Permalink, SentryStatus);
     }
 
     private AzureSignIn CreateAzureSignIn() =>
@@ -572,6 +730,11 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _settings.SentryOrganization = SentryOrganization.Trim();
         _settings.SentryRegionUrl = SentryRegionUrl.Trim();
         if (!string.IsNullOrWhiteSpace(SentryToken)) _settings.SetSentryToken(SentryToken.Trim());
+        if (AvailableSentryProjects.Count > 0)
+        {
+            _settings.WatchedSentryProjects = AvailableSentryProjects
+                .Where(p => p.IsSelected).Select(p => p.Slug).ToList();
+        }
         _settings.Save();
     }
 
@@ -889,6 +1052,11 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.PollCompleted += OnPollCompleted;
         _poller.NewPullRequestDetected += OnNewPullRequestDetected;
         _poller.NewBuildFailureDetected += OnNewBuildFailureDetected;
+        _poller.NewSentryIssueDetected += OnNewSentryIssueDetected;
+        _poller.SentryRegressionDetected += OnSentryRegressionDetected;
+        _poller.SentryEscalationDetected += OnSentryEscalationDetected;
+        _poller.SentryFailed += OnSentryFailed;
+        _poller.SentryPolled += OnSentryPolled;
         _poller.StatusChanged += OnStatusChanged;
         _poller.ErrorOccurred += OnErrorOccurred;
 
@@ -912,6 +1080,44 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnNewBuildFailureDetected(BuildItem build)
         => Dispatcher.UIThread.Post(() => _notifications.ShowBuildFailed(
             build.DefinitionName, build.BranchShortName, build.WebUrl));
+
+    private void OnNewSentryIssueDetected(SentryIssueItem issue)
+        => Dispatcher.UIThread.Post(() => _notifications.ShowSentryIssue(
+            issue.Title, issue.ProjectSlug, Detail(issue), issue.Permalink, isRegression: false));
+
+    private void OnSentryRegressionDetected(SentryIssueItem issue)
+        => Dispatcher.UIThread.Post(() => _notifications.ShowSentryIssue(
+            issue.Title, issue.ProjectSlug, Detail(issue), issue.Permalink, isRegression: true));
+
+    /// <summary>Reach plus the version it happened in, which is where triage starts.</summary>
+    private static string Detail(SentryIssueItem issue) =>
+        issue.HasRelease ? $"{issue.Impact} · {issue.ReleaseSummary}" : issue.Impact;
+
+    private void OnSentryEscalationDetected(SentryIssueItem issue)
+        => Dispatcher.UIThread.Post(() => _notifications.ShowSentryIssue(
+            issue.Title, issue.ProjectSlug, $"grown to {Detail(issue)}", issue.Permalink, isRegression: true));
+
+    private void OnSentryFailed(string msg)
+        => Dispatcher.UIThread.Post(() => SentryStatus.Set(
+            msg.Contains("authentication", StringComparison.OrdinalIgnoreCase)
+                ? ConnectionState.AuthFailed
+                : ConnectionState.Error,
+            msg));
+
+    private void OnSentryPolled(List<SentryIssueItem> issues)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            _lastSentryIssues = issues;
+            RebuildSentryList();
+
+            var muted = issues.Count(i => _settings.IsSentryIssueMuted(i.Id));
+            var active = issues.Count - muted;
+            SentryStatus.Set(
+                ConnectionState.Connected,
+                active == 0 && muted == 0 ? "Connected, nothing unresolved"
+                : muted == 0 ? $"Connected, {active} unresolved"
+                : $"Connected, {active} unresolved, {muted} muted");
+        });
 
     private void OnStatusChanged(string msg)
         => Dispatcher.UIThread.Post(() => StatusText = msg);
@@ -952,6 +1158,11 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.PollCompleted -= OnPollCompleted;
         _poller.NewPullRequestDetected -= OnNewPullRequestDetected;
         _poller.NewBuildFailureDetected -= OnNewBuildFailureDetected;
+        _poller.NewSentryIssueDetected -= OnNewSentryIssueDetected;
+        _poller.SentryRegressionDetected -= OnSentryRegressionDetected;
+        _poller.SentryEscalationDetected -= OnSentryEscalationDetected;
+        _poller.SentryFailed -= OnSentryFailed;
+        _poller.SentryPolled -= OnSentryPolled;
         _poller.StatusChanged -= OnStatusChanged;
         _poller.ErrorOccurred -= OnErrorOccurred;
     }

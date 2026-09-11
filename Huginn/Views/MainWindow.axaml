@@ -216,6 +216,37 @@
                             <TextBlock Grid.Column="2" Text="{Binding SentryStatus.StateText}" FontSize="12"
                                        VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
                         </Grid>
+
+                        <Separator Margin="0,4"/>
+                        <TextBlock Text="What to watch" FontSize="12" FontWeight="SemiBold" Opacity="0.8"/>
+                        <TextBlock Text="Alert on new and returning issues in these projects. None ticked watches them all."
+                                   FontSize="11" Opacity="0.5" TextWrapping="Wrap"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Command="{Binding LoadSentryProjectsCommand}" Content="⟳"
+                                    FontSize="14" Width="32" HorizontalContentAlignment="Center"
+                                    IsEnabled="{Binding !IsLoadingSentryProjects}"
+                                    ToolTip.Tip="Refresh the project list"/>
+                            <TextBlock Text="{Binding SentryProjectPickerStatus}" FontSize="12"
+                                       VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <Border MaxHeight="160" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1" CornerRadius="4"
+                                IsVisible="{Binding AvailableSentryProjects.Count}">
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding AvailableSentryProjects}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SelectableSentryProject">
+                                            <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
+                                                <TextBlock Text="{Binding Slug}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </CheckBox>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
                     </StackPanel>
                 </Expander>
 
@@ -454,6 +485,41 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <Border IsVisible="{Binding HasSentryIssues}" Margin="4" Padding="10" CornerRadius="6"
+                        Background="#33AA44FF" BorderBrush="#88AA44FF" BorderThickness="1">
+                    <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Text="🐛 Sentry issues" FontWeight="SemiBold" FontSize="14"
+                                       Foreground="#FF9944DD" VerticalAlignment="Center"/>
+                            <ToggleButton Grid.Column="2" IsChecked="{Binding ShowMutedSentryIssues}"
+                                          FontSize="12" Padding="8,3" VerticalAlignment="Center"
+                                          IsVisible="{Binding HasMutedSentryIssues}"
+                                          ToolTip.Tip="Switch the list over to the issues you have muted">
+                                <ToggleButton.Content>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Text="🔇"/>
+                                        <TextBlock Text="{Binding MutedSentryCount, StringFormat={}{0} muted}"/>
+                                    </StackPanel>
+                                </ToggleButton.Content>
+                            </ToggleButton>
+                        </Grid>
+                        <ScrollViewer MaxHeight="300"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding SentryIssues}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:SentryIssueItem">
+                                        <views:SentryIssueCardView DataContext="{Binding}"
+                                                                   OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenSentryIssueCommand}"
+                                                                   MuteCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ToggleSentryIssueMutedCommand}"
+                                                                   DismissCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).DismissSentryIssueCommand}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
                     </StackPanel>
                 </Border>
 

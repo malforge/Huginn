@@ -13,4 +13,7 @@ public interface INotificationService
     void ShowNewPullRequest(string title, string author, string repo, string url);
 
     void ShowBuildFailed(string pipelineName, string branch, string url);
+
+    /// <summary>A Sentry issue that is new, or has returned after being resolved.</summary>
+    void ShowSentryIssue(string title, string project, string impact, string url, bool isRegression);
 }

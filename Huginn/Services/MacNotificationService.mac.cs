@@ -47,6 +47,43 @@ public class MacNotificationService : INotificationService
         }
     }
 
+    public void ShowSentryIssue(string title, string project, string impact, string url, bool isRegression)
+    {
+        Notify(
+            isRegression ? "🔁 Sentry regression" : "🐛 New Sentry issue",
+            title,
+            $"{project} · {impact}");
+    }
+
+    private void Notify(string heading, string subtitle, string body)
+    {
+        try
+        {
+            var script = $"display notification \"{EscapeAppleScript(body)}\" " +
+                         $"with title \"{heading}\" " +
+                         $"subtitle \"{EscapeAppleScript(subtitle)}\"";
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "osascript",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+            };
+
+            var proc = Process.Start(psi);
+            if (proc != null)
+            {
+                proc.StandardInput.Write(script);
+                proc.StandardInput.Close();
+            }
+        }
+        catch
+        {
+            // Non-critical
+        }
+    }
+
     public void ShowBuildFailed(string pipelineName, string branch, string url)
     {
         try

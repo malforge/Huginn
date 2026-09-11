@@ -65,4 +65,22 @@ public class WinToastService : INotificationService
             // Toast failures are non-critical
         }
     }
+
+    public void ShowSentryIssue(string title, string project, string impact, string url, bool isRegression)
+    {
+        try
+        {
+            new ToastContentBuilder()
+                .AddArgument("action", "openSentryIssue")
+                .AddArgument("url", url)
+                .AddText(isRegression ? "🔁 Sentry regression" : "🐛 New Sentry issue")
+                .AddText(title)
+                .AddText($"{project} · {impact}")
+                .Show();
+        }
+        catch
+        {
+            // Toast failures are non-critical
+        }
+    }
 }

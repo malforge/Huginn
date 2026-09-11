@@ -89,6 +89,7 @@ public static class PlatformFactory
         public void RegisterActivation() { }
         public void ShowNewPullRequest(string title, string author, string repo, string url) { }
         public void ShowBuildFailed(string pipelineName, string branch, string url) { }
+        public void ShowSentryIssue(string title, string project, string impact, string url, bool isRegression) { }
     }
 
     private sealed class FileCredentialStore : ICredentialStore
