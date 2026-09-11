@@ -15,6 +15,26 @@ public sealed partial class ServiceFinding : ObservableObject
 
     public string AppId { get; init; } = "";
 
+    /// <summary>ARM id of the resource, used to build the portal link.</summary>
+    public string ResourceId { get; init; } = "";
+
+    /// <summary>
+    /// Opens the blade that deals with this kind of problem. Application Insights has no
+    /// per-operation permalink, and the portal ignores a query passed in the URL, so this is
+    /// as close as a link gets: the performance blade lists operations by duration, and the
+    /// failures blade by result code.
+    /// </summary>
+    public string PortalUrl => ResourceId.Length == 0
+        ? ""
+        : $"https://portal.azure.com/#resource{ResourceId}/" + Kind switch
+        {
+            FindingKind.Latency => "performance",
+            FindingKind.FailureRate or FindingKind.Dependency => "failures",
+            _ => "overview",
+        };
+
+    public bool HasPortalUrl => PortalUrl.Length > 0;
+
     /// <summary>What the finding is about: an operation name, or a dependency target.</summary>
     public string Subject { get; init; } = "";
 

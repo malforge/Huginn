@@ -162,8 +162,18 @@ public sealed class PollingService : IDisposable
             var (credential, _) = await signIn.GetCredentialAsync(allowPrompt: false, ct);
             using var client = new AppInsightsApiClient(credential);
 
+            // Entries saved before the ARM id was kept hold only a name, which leaves the
+            // portal links dead. Fill them in once rather than making the user re-pick.
+            if (_settings.WatchedAppInsights.Values.Any(v => AppSettings.ResourceIdOf(v).Length == 0))
+                await UpgradeWatchedResourcesAsync(client, ct);
+
             var components = _settings.WatchedAppInsights
-                .Select(w => new AppInsightsComponent { AppId = w.Key, Name = w.Value })
+                .Select(w => new AppInsightsComponent
+                {
+                    AppId = w.Key,
+                    Name = AppSettings.NameOf(w.Value),
+                    ResourceId = AppSettings.ResourceIdOf(w.Value),
+                })
                 .ToList();
 
             var snapshot = await _appInsightsMonitor.PollAsync(client, components, _settings, ct);
@@ -285,6 +295,44 @@ public sealed class PollingService : IDisposable
         finally
         {
             _sentryLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Replaces stored resource names with their full ARM ids, so portal links work without the
+    /// user having to reselect anything. Failure here is not worth reporting: the watch still
+    /// works, only the link is missing.
+    /// </summary>
+    private async Task UpgradeWatchedResourcesAsync(AppInsightsApiClient client, CancellationToken ct)
+    {
+        try
+        {
+            var known = await client.GetComponentsAsync(ct);
+            var byAppId = known.ToDictionary(c => c.AppId, c => c.ResourceId);
+            var changed = false;
+
+            foreach (var appId in _settings.WatchedAppInsights.Keys.ToList())
+            {
+                if (AppSettings.ResourceIdOf(_settings.WatchedAppInsights[appId]).Length > 0) continue;
+                if (!byAppId.TryGetValue(appId, out var resourceId) || resourceId.Length == 0) continue;
+
+                _settings.WatchedAppInsights[appId] = resourceId;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                _settings.Save();
+                Log.Info("Filled in Azure resource ids for the watched Application Insights resources.");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Could not resolve resource ids: {ex.Message}");
         }
     }
 

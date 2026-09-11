@@ -33,15 +33,15 @@
 
             <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6"
                         VerticalAlignment="Center" Margin="8,0,0,0">
-                <Button Content="Dismiss" FontSize="11"
-                        IsVisible="{Binding IsFlagged}"
-                        Command="{Binding #root.DismissCommand}"
-                        CommandParameter="{Binding}"
-                        ToolTip.Tip="Stop pinning this to the top. It stays in the list."/>
                 <Button Content="{Binding MuteLabel}" FontSize="11"
                         Command="{Binding #root.MuteCommand}"
                         CommandParameter="{Binding}"
                         ToolTip.Tip="{Binding MuteTooltip}"/>
+                <Button Content="Open in portal ↗" FontSize="11"
+                        IsVisible="{Binding HasPortalUrl}"
+                        Command="{Binding #root.OpenCommand}"
+                        CommandParameter="{Binding}"
+                        ToolTip.Tip="Open the blade for this kind of problem in the Azure portal"/>
             </StackPanel>
         </Grid>
     </Border>

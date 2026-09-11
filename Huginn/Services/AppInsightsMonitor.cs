@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Huginn.Models;
@@ -20,9 +19,6 @@ namespace Huginn.Services;
 /// </remarks>
 public sealed class AppInsightsMonitor
 {
-    /// <summary>Window each rule looks back over.</summary>
-    private const string Window = "1h";
-
     /// <summary>Calls a route needs in the window before its rates mean anything.</summary>
     private const int MinimumCalls = 10;
 
@@ -55,7 +51,8 @@ public sealed class AppInsightsMonitor
         {
             try
             {
-                findings.AddRange(await ExamineAsync(client, component, ct));
+                findings.AddRange(await ExamineAsync(
+                    client, component, Math.Max(5, settings.AppInsightsWindowMinutes), ct));
             }
             catch (OperationCanceledException)
             {
@@ -64,69 +61,53 @@ public sealed class AppInsightsMonitor
             catch (Exception ex)
             {
                 // One unreadable resource must not hide the others.
-                Log.Error($"Could not examine {component.Name}: {ex.Message}");
+                Log.Error($"Could not examine {component.Name}: {ex.GetType().Name}: {ex.Message}");
+                Log.Error(ex.ToString());
             }
         }
 
+        // Unlike a Sentry backlog, a finding describes what is wrong right now. There is no
+        // such thing as an old one worth hiding: if the route is failing, it belongs on screen.
+        // So everything unmuted is listed, and only the notification is held back to the ones
+        // that are genuinely new to this session.
         List<ServiceFinding> raised = [];
 
         foreach (ServiceFinding finding in findings)
         {
             if (settings.HasFindingOutgrownMute(finding.Id, finding.Magnitude, EscalationFactor))
-            {
                 settings.UnmuteFinding(finding.Id);
-                if (_hasBaseline) raised.Add(finding);
-            }
 
             finding.IsMuted = settings.IsFindingMuted(finding.Id);
             finding.MutedAtMagnitude = settings.GetFindingMutedAt(finding.Id);
-        }
+            finding.FlagReason = finding.KindLabel;
 
-        if (_hasBaseline)
-        {
-            foreach (ServiceFinding finding in findings.Where(f => !f.IsMuted && _known.Add(f.Id)))
+            if (!finding.IsMuted && _known.Add(finding.Id) && _hasBaseline)
                 raised.Add(finding);
         }
-        else
-        {
-            foreach (ServiceFinding finding in findings) _known.Add(finding.Id);
-            _hasBaseline = true;
-        }
 
-        foreach (ServiceFinding finding in raised)
-            settings.FlagFinding(finding.Id, finding.KindLabel);
+        _hasBaseline = true;
 
-        settings.PruneFindingFlags([.. findings.Select(f => f.Id)]);
-
-        foreach (ServiceFinding finding in findings)
-        {
-            finding.IsFlagged = settings.IsFindingFlagged(finding.Id);
-            finding.FlagReason = settings.GetFindingFlagReason(finding.Id);
-        }
-
-        // A finding that has gone away stops being known, so it can be raised again if it returns.
+        // A finding that has gone away stops being known, so its return is news again.
         _known.IntersectWith(findings.Select(f => f.Id));
 
-        findings.Sort((a, b) =>
-        {
-            int flagged = (b.IsFlagged ? 1 : 0).CompareTo(a.IsFlagged ? 1 : 0);
-            return flagged != 0 ? flagged : b.Magnitude.CompareTo(a.Magnitude);
-        });
+        findings.Sort((a, b) => b.Magnitude.CompareTo(a.Magnitude));
 
         return new Snapshot(findings, raised);
     }
 
     private static async Task<List<ServiceFinding>> ExamineAsync(
-        AppInsightsApiClient client, AppInsightsComponent component, CancellationToken ct)
+        AppInsightsApiClient client, AppInsightsComponent component, int windowMinutes,
+        CancellationToken ct)
     {
         List<ServiceFinding> findings = [];
+        string window = $"{windowMinutes}m";
 
         // Requests that 404 are excluded wholesale. On an internet-facing resource they are
         // overwhelmingly bots probing for /wp-admin and friends, which would otherwise drown out
         // every real signal; a 404 from our own client is a client bug rather than an outage.
         QueryTable routes = await client.QueryAsync(component.AppId, $"""
             requests
-            | where timestamp > ago({Window})
+            | where timestamp > ago({window})
             | where toint(resultCode) != 404
             | summarize total = sum(itemCount),
                         failed = sumif(itemCount, success == false),
@@ -142,7 +123,7 @@ public sealed class AppInsightsMonitor
 
         long traffic = 0;
 
-        foreach (List<JsonElement> row in routes.Rows)
+        foreach (IReadOnlyList<string> row in routes.Rows)
         {
             string name = Text(row, nameAt);
             long total = Number(row, totalAt);
@@ -158,6 +139,7 @@ public sealed class AppInsightsMonitor
                     Kind = FindingKind.FailureRate,
                     ResourceName = component.Name,
                     AppId = component.AppId,
+                    ResourceId = component.ResourceId,
                     Subject = name,
                     Detail = $"{rate:P0} of {total:N0} calls failed",
                     Magnitude = rate * 100,
@@ -171,6 +153,7 @@ public sealed class AppInsightsMonitor
                     Kind = FindingKind.Latency,
                     ResourceName = component.Name,
                     AppId = component.AppId,
+                    ResourceId = component.ResourceId,
                     Subject = name,
                     Detail = $"p95 {p95 / 1000:N1}s over {total:N0} calls",
                     Magnitude = p95,
@@ -180,7 +163,7 @@ public sealed class AppInsightsMonitor
 
         QueryTable dependencies = await client.QueryAsync(component.AppId, $"""
             dependencies
-            | where timestamp > ago({Window}) and success == false
+            | where timestamp > ago({window}) and success == false
             | summarize failed = sum(itemCount) by type, target, resultCode
             | where failed >= {DependencyFailureThreshold}
             | order by failed desc
@@ -192,15 +175,18 @@ public sealed class AppInsightsMonitor
         int codeAt = dependencies.IndexOf("resultCode");
         int depFailedAt = dependencies.IndexOf("failed");
 
-        foreach (List<JsonElement> row in dependencies.Rows)
+        foreach (IReadOnlyList<string> row in dependencies.Rows)
         {
             long failed = Number(row, depFailedAt);
+            string target = Text(row, targetAt);
+
             findings.Add(new ServiceFinding
             {
                 Kind = FindingKind.Dependency,
                 ResourceName = component.Name,
                 AppId = component.AppId,
-                Subject = $"{Text(row, typeAt)} {Text(row, targetAt)}".Trim(),
+                ResourceId = component.ResourceId,
+                Subject = $"{Text(row, typeAt)} {target}".Trim(),
                 Detail = $"{failed:N0} failures, code {Text(row, codeAt)}",
                 Magnitude = failed,
             });
@@ -214,8 +200,9 @@ public sealed class AppInsightsMonitor
                 Kind = FindingKind.NoTraffic,
                 ResourceName = component.Name,
                 AppId = component.AppId,
+                ResourceId = component.ResourceId,
                 Subject = component.Name,
-                Detail = $"no requests in the last {Window}",
+                Detail = $"no requests in the last {Describe(windowMinutes)}",
                 Magnitude = 1,
             });
         }
@@ -223,26 +210,18 @@ public sealed class AppInsightsMonitor
         return findings;
     }
 
-    private static string Text(List<JsonElement> row, int index) =>
-        index < 0 || index >= row.Count ? "" : row[index].ValueKind switch
-        {
-            JsonValueKind.String => row[index].GetString() ?? "",
-            JsonValueKind.Null or JsonValueKind.Undefined => "",
-            _ => row[index].ToString(),
-        };
+    /// <summary>Reads the window back as a person would say it.</summary>
+    private static string Describe(int minutes) =>
+        minutes % 60 == 0 ? $"{minutes / 60}h" : $"{minutes}m";
 
-    private static long Number(List<JsonElement> row, int index)
-    {
-        if (index < 0 || index >= row.Count) return 0;
-        JsonElement value = row[index];
-        return value.ValueKind switch
-        {
-            JsonValueKind.Number => (long)value.GetDouble(),
-            JsonValueKind.String when double.TryParse(
-                value.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out double d) => (long)d,
-            _ => 0,
-        };
-    }
+    private static string Text(IReadOnlyList<string> row, int index) =>
+        index < 0 || index >= row.Count ? "" : row[index];
+
+    private static long Number(IReadOnlyList<string> row, int index) =>
+        index >= 0 && index < row.Count
+        && double.TryParse(row[index], NumberStyles.Any, CultureInfo.InvariantCulture, out double d)
+            ? (long)d
+            : 0;
 
     public void Reset()
     {

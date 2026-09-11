@@ -13,6 +13,9 @@ public sealed class AppInsightsComponent
 
     public string ResourceGroup { get; init; } = "";
 
+    /// <summary>Full ARM id. The portal addresses resources by this, not by the query app id.</summary>
+    public string ResourceId { get; init; } = "";
+
     /// <summary>Resource group and subscription, for telling similarly named resources apart.</summary>
     public string Qualifier => $"{ResourceGroup} · {SubscriptionName}";
 }

@@ -40,11 +40,22 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     public ObservableCollection<BuildItem> RetryingBuilds { get; } = [];
     public ObservableCollection<PullRequestItem> AcknowledgedPrs { get; } = [];
     public ObservableCollection<BuildItem> AcknowledgedBuilds { get; } = [];
-    /// <summary>One section per watched Sentry project, since each is a separate app.</summary>
-    public ObservableCollection<SentryProjectGroup> SentryGroups { get; } = [];
+    /// <summary>
+    /// Crashes and service findings are unbounded, so only the raised ones are listed. The rest
+    /// is one summary line per project or resource, which is a fixed height whatever the volume.
+    /// </summary>
+    public ObservableCollection<SentryIssueItem> CrashActions { get; } = [];
+    public ObservableCollection<SourceSummary> CrashSummaries { get; } = [];
 
-    /// <summary>One section per watched Application Insights resource.</summary>
-    public ObservableCollection<ServiceFindingGroup> ServiceGroups { get; } = [];
+    public ObservableCollection<ServiceFinding> ServiceActions { get; } = [];
+    public ObservableCollection<SourceSummary> ServiceSummaries { get; } = [];
+
+    [ObservableProperty] private bool _showMutedCrashes;
+    [ObservableProperty] private bool _showMutedServices;
+    [ObservableProperty] private int _mutedCrashCount;
+    [ObservableProperty] private int _mutedServiceCount;
+    [ObservableProperty] private bool _hasMutedCrashes;
+    [ObservableProperty] private bool _hasMutedServices;
 
     /// <summary>Health of every source, in the order they appear in settings.</summary>
     public ObservableCollection<ConnectionStatus> Connections { get; } = [];
@@ -67,16 +78,43 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _hasUnstaffedPrs;
     [ObservableProperty] private bool _hasAutoCompleteOffPrs;
     [ObservableProperty] private bool _hasMyActivePrs;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasReviewSection))]
+    private bool _hasReadyToReview;
+
+    /// <summary>
+    /// The review heading earns its space when there is something to review, or something hidden
+    /// behind the approved toggle. Otherwise it is a title over nothing.
+    /// </summary>
+    public bool HasReviewSection => HasReadyToReview || HasHiddenApproved;
     [ObservableProperty] private bool _hasFailedBuilds;
     [ObservableProperty] private bool _hasRetryingBuilds;
     [ObservableProperty] private bool _hasAcknowledged;
     [ObservableProperty] private bool _isSettingsVisible;
+
+    /// <summary>
+    /// How many pane columns the window is wide enough for. Driven by the window rather than
+    /// fixed, so the same layout works maximised and at the minimum width.
+    /// </summary>
+    [ObservableProperty] private int _layoutColumns = 1;
+
+    // A pane with nothing in it is ambiguous: quiet, never run, or quietly broken. Each one
+    // therefore says when it last managed to look.
+    [ObservableProperty] private string _adoPaneStatus = "not checked yet";
+    [ObservableProperty] private string _sentryPaneStatus = "not checked yet";
+    [ObservableProperty] private string _servicePaneStatus = "not checked yet";
+
+    private DateTimeOffset? _adoLastPolled;
+    private DateTimeOffset? _sentryLastPolled;
+    private DateTimeOffset? _serviceLastPolled;
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private bool _isRefreshing;
     [ObservableProperty] private bool _showApproved;
     [ObservableProperty] private bool _updateAvailable;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasHiddenApproved))]
+    [NotifyPropertyChangedFor(nameof(HasReviewSection))]
     private int _hiddenApprovedCount;
     public bool HasHiddenApproved => HiddenApprovedCount > 0;
 
@@ -90,6 +128,19 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _appInsightsTenantId = "";
     [ObservableProperty] private string _appInsightsClientId = "";
     [ObservableProperty] private string _appInsightsAccount = "";
+    /// <summary>How far back the service rules look, as a handful of familiar spans.</summary>
+    public IReadOnlyList<WindowChoice> WindowChoices { get; } =
+    [
+        new("Last hour", 60),
+        new("Last 3 hours", 180),
+        new("Last 6 hours", 360),
+        new("Last 12 hours", 720),
+        new("Last day", 1440),
+        new("Last 3 days", 4320),
+        new("Last week", 10080),
+    ];
+
+    [ObservableProperty] private WindowChoice? _selectedWindow;
     [ObservableProperty] private bool _isAdoExpanded;
     [ObservableProperty] private bool _isSentryExpanded;
     [ObservableProperty] private bool _isAppInsightsExpanded;
@@ -140,6 +191,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         SentryRegionUrl = _settings.SentryRegionUrl;
         AppInsightsTenantId = _settings.AppInsightsTenantId;
         AppInsightsClientId = _settings.AppInsightsClientId;
+        SelectedWindow = WindowChoices.FirstOrDefault(w => w.Minutes == _settings.AppInsightsWindowMinutes)
+                         ?? WindowChoices[0];
         SentryToken = _settings.GetSentryToken() ?? "";
         MonitorMyBuilds = _settings.MonitorMyBuilds;
         AutoStartEnabled = _autoStart.IsEnabled;
@@ -151,7 +204,13 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         Connections.Add(SentryStatus);
         Connections.Add(AppInsightsStatus);
         foreach (var connection in Connections)
-            connection.PropertyChanged += (_, _) => RefreshConnectionBanner();
+        {
+            connection.PropertyChanged += (_, _) =>
+            {
+                RefreshConnectionBanner();
+                RefreshPaneStatuses();
+            };
+        }
 
         if (_settings.IsSentryConfigured)
             SentryStatus.Set(ConnectionState.Connected, "Configured, not yet polled");
@@ -458,27 +517,133 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             issue.FlagReason = _settings.GetSentryFlagReason(issue.Id);
         }
 
-        // Groups are updated in place rather than rebuilt, so a section keeps its own muted
-        // toggle across polls.
-        foreach (var byProject in _lastSentryIssues.GroupBy(i => i.ProjectSlug).OrderBy(g => g.Key))
+        MutedCrashCount = _lastSentryIssues.Count(i => i.IsMuted);
+        HasMutedCrashes = MutedCrashCount > 0;
+        if (ShowMutedCrashes && MutedCrashCount == 0) ShowMutedCrashes = false;
+
+        Sync(CrashActions, _lastSentryIssues
+            .Where(i => ShowMutedCrashes ? i.IsMuted : i.IsFlagged && !i.IsMuted));
+
+        Summarise(CrashSummaries, _lastSentryIssues
+            .GroupBy(i => i.ProjectSlug)
+            .OrderBy(g => g.Key)
+            .Select(g => (g.Key, SentryProjectUrl(g.Key),
+                          g.Count(), g.Count(i => i.IsFlagged), g.Count(i => i.IsMuted),
+                          $"{g.Count()} unresolved")));
+    }
+
+    private string SentryProjectUrl(string slug)
+    {
+        var region = string.IsNullOrWhiteSpace(_settings.SentryRegionUrl)
+            ? "https://sentry.io"
+            : _settings.SentryRegionUrl.TrimEnd('/');
+        var org = Uri.EscapeDataString(_settings.SentryOrganization);
+        return $"{region}/organizations/{org}/issues/?query={Uri.EscapeDataString("is:unresolved")}"
+             + $"&project={Uri.EscapeDataString(slug)}";
+    }
+
+    /// <summary>
+    /// Replaces a list in place. Clearing and refilling leaves the scroll viewer holding an
+    /// offset into content that no longer exists, which shows up as a half-drawn first row.
+    /// </summary>
+    private static void Sync<T>(ObservableCollection<T> target, IEnumerable<T> source)
+    {
+        var wanted = source.ToList();
+
+        for (var i = target.Count - 1; i >= 0; i--)
         {
-            var group = SentryGroups.FirstOrDefault(g => g.Slug == byProject.Key);
-            if (group is null)
+            if (!wanted.Contains(target[i])) target.RemoveAt(i);
+        }
+
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            var existing = target.IndexOf(wanted[i]);
+            if (existing < 0) target.Insert(i, wanted[i]);
+            else if (existing != i) target.Move(existing, i);
+        }
+    }
+
+    /// <summary>
+    /// Updates the summary rows in place, so a row does not flicker or lose its position each
+    /// time a poll lands.
+    /// </summary>
+    private static void Summarise(
+        ObservableCollection<SourceSummary> rows,
+        IEnumerable<(string Name, string Url, int Total, int Flagged, int Muted, string Breakdown)> source)
+    {
+        var seen = new HashSet<string>();
+
+        foreach (var (name, url, total, flagged, muted, breakdown) in source)
+        {
+            seen.Add(name);
+            var row = rows.FirstOrDefault(r => r.Name == name);
+            if (row is null)
             {
-                group = new SentryProjectGroup { Slug = byProject.Key };
-                SentryGroups.Add(group);
+                row = new SourceSummary { Name = name, Url = url };
+                rows.Add(row);
             }
 
-            group.SetIssues([.. byProject]);
+            row.Total = total;
+            row.Flagged = flagged;
+            row.Muted = muted;
+            row.Breakdown = breakdown;
         }
 
-        // A project that has stopped reporting, or been unwatched, loses its section.
-        var live = _lastSentryIssues.Select(i => i.ProjectSlug).ToHashSet();
-        for (var i = SentryGroups.Count - 1; i >= 0; i--)
+        for (var i = rows.Count - 1; i >= 0; i--)
         {
-            if (!live.Contains(SentryGroups[i].Slug)) SentryGroups.RemoveAt(i);
+            if (!seen.Contains(rows[i].Name)) rows.RemoveAt(i);
         }
+    }
 
+    /// <summary>Portal link for a watched resource, empty when its ARM id was never stored.</summary>
+    private string PortalResourceUrl(string resourceName)
+    {
+        var entry = _settings.WatchedAppInsights.Values
+            .FirstOrDefault(v => AppSettings.NameOf(v) == resourceName);
+
+        var id = entry is null ? "" : AppSettings.ResourceIdOf(entry);
+        return id.Length == 0 ? "" : $"https://portal.azure.com/#resource{id}/overview";
+    }
+
+    /// <summary>Names the kinds of trouble on a resource, loudest first.</summary>
+    private static string DescribeKinds(IEnumerable<ServiceFinding> findings)
+    {
+        var parts = findings
+            .GroupBy(f => f.Kind)
+            .OrderByDescending(g => g.Count())
+            .Select(g => $"{g.Count()} {Describe(g.Key)}")
+            .ToList();
+
+        return string.Join(" · ", parts);
+
+        static string Describe(FindingKind kind) => kind switch
+        {
+            FindingKind.FailureRate => "failing",
+            FindingKind.Latency => "slow",
+            FindingKind.Dependency => "dependency",
+            FindingKind.NoTraffic => "silent",
+            _ => "other",
+        };
+    }
+
+    [RelayCommand]
+    private void OpenSummary(SourceSummary? summary)
+    {
+        if (summary is null || !summary.HasUrl) return;
+
+        // Report a launch failure against whichever connection the row belongs to.
+        var status = summary.Url.Contains("portal.azure.com", StringComparison.OrdinalIgnoreCase)
+            ? AppInsightsStatus
+            : SentryStatus;
+
+        OpenUrl(summary.Url, status);
+    }
+
+    [RelayCommand]
+    private void OpenServiceFinding(ServiceFinding? finding)
+    {
+        if (finding is null || !finding.HasPortalUrl) return;
+        OpenUrl(finding.PortalUrl, AppInsightsStatus);
     }
 
     [RelayCommand]
@@ -510,34 +675,58 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// Clears a raised alert, which is what lets the issue fall back into plain impact order.
     /// </summary>
     /// <summary>Rebuilds the per-resource sections from the last Application Insights poll.</summary>
+    /// <summary>
+    /// One line per pane saying whether it is clear, stale or broken, and when it last looked.
+    /// Without it an empty pane cannot be told apart from one that never ran.
+    /// </summary>
+    private static string PaneLine(ConnectionStatus status, DateTimeOffset? last, bool anything)
+    {
+        var checkedAt = last is null ? "never checked" : "checked " + last.Value.ToString("HH:mm");
+
+        if (status.State == ConnectionState.Connecting) return "checking…";
+        if (status.NeedsAttention) return $"{status.Glyph} {status.StateText}  ·  {checkedAt}";
+
+        return anything ? checkedAt : $"all clear  ·  {checkedAt}";
+    }
+
+    private void RefreshPaneStatuses()
+    {
+        AdoPaneStatus = PaneLine(AdoStatus, _adoLastPolled, true);
+        SentryPaneStatus = PaneLine(SentryStatus, _sentryLastPolled, CrashActions.Count > 0);
+        ServicePaneStatus = PaneLine(AppInsightsStatus, _serviceLastPolled, ServiceActions.Count > 0);
+    }
+
     private void RebuildServiceGroups()
     {
         foreach (var finding in _lastFindings)
         {
             finding.IsMuted = _settings.IsFindingMuted(finding.Id);
-            finding.IsFlagged = _settings.IsFindingFlagged(finding.Id);
-            finding.FlagReason = _settings.GetFindingFlagReason(finding.Id);
             finding.MutedAtMagnitude = _settings.GetFindingMutedAt(finding.Id);
         }
 
-        foreach (var byResource in _lastFindings.GroupBy(f => f.ResourceName).OrderBy(g => g.Key))
-        {
-            var group = ServiceGroups.FirstOrDefault(g => g.ResourceName == byResource.Key);
-            if (group is null)
-            {
-                group = new ServiceFindingGroup { ResourceName = byResource.Key };
-                ServiceGroups.Add(group);
-            }
+        MutedServiceCount = _lastFindings.Count(f => f.IsMuted);
+        HasMutedServices = MutedServiceCount > 0;
+        if (ShowMutedServices && MutedServiceCount == 0) ShowMutedServices = false;
 
-            group.SetFindings([.. byResource]);
-        }
+        Sync(ServiceActions, _lastFindings.Where(f => f.IsMuted == ShowMutedServices));
 
-        var live = _lastFindings.Select(f => f.ResourceName).ToHashSet();
-        for (var i = ServiceGroups.Count - 1; i >= 0; i--)
-        {
-            if (!live.Contains(ServiceGroups[i].ResourceName)) ServiceGroups.RemoveAt(i);
-        }
+        Summarise(ServiceSummaries, _lastFindings
+            .GroupBy(f => f.ResourceName)
+            .OrderBy(g => g.Key)
+            .Select(g => (g.Key, PortalResourceUrl(g.Key),
+                          g.Count(), 0, g.Count(f => f.IsMuted), DescribeKinds(g))));
     }
+
+    partial void OnSelectedWindowChanged(WindowChoice? value)
+    {
+        if (value is null) return;
+        _settings.AppInsightsWindowMinutes = value.Minutes;
+        _settings.Save();
+    }
+
+    partial void OnShowMutedCrashesChanged(bool value) => RebuildSentryList();
+
+    partial void OnShowMutedServicesChanged(bool value) => RebuildServiceGroups();
 
     [RelayCommand]
     private void ToggleServiceFindingMuted(ServiceFinding? finding)
@@ -759,6 +948,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 {
                     AppId = c.AppId,
                     DisplayName = c.Name,
+                    ResourceId = c.ResourceId,
                     Qualifier = c.Qualifier,
                     IsSelected = selected.Contains(c.AppId),
                 };
@@ -794,7 +984,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         _settings.WatchedAppInsights = AvailableComponents
             .Where(c => c.IsSelected)
-            .ToDictionary(c => c.AppId, c => c.DisplayName);
+            .ToDictionary(c => c.AppId, c => c.ResourceId.Length > 0 ? c.ResourceId : c.DisplayName);
         _settings.Save();
         ReportAppInsightsState();
     }
@@ -918,6 +1108,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         _settings.AppInsightsTenantId = AppInsightsTenantId.Trim();
         _settings.AppInsightsClientId = AppInsightsClientId.Trim();
+        if (SelectedWindow is not null) _settings.AppInsightsWindowMinutes = SelectedWindow.Minutes;
         _settings.Save();
     }
 
@@ -1102,6 +1293,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void HandlePollResult(PollResult result)
     {
         _lastPollResult = result;
+        _adoLastPolled = DateTimeOffset.Now;
 
         // Apply persisted acknowledgements before categorization so badge math sees them.
         foreach (var pr in result.ReviewPrs.Concat(result.UnstaffedPrs).Concat(result.StaffedMyPrs))
@@ -1151,12 +1343,14 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         HasUnstaffedPrs = UnstaffedPrs.Count > 0;
         HasAutoCompleteOffPrs = AutoCompleteOffPrs.Count > 0;
         HasMyActivePrs = MyActivePrs.Count > 0;
+        HasReadyToReview = ReadyToReviewPrs.Count > 0;
         HasFailedBuilds = FailedBuilds.Count > 0;
         HasRetryingBuilds = RetryingBuilds.Count > 0;
         HasAcknowledged = AcknowledgedPrs.Count > 0 || AcknowledgedBuilds.Count > 0;
         HiddenApprovedCount = cats.ApprovedByMeCount;
 
         UpdateBadge();
+        RefreshPaneStatuses();
 
         // Drop acknowledgements for items that have aged out of poll results.
         var alivePrIds = result.ReviewPrs.Concat(result.UnstaffedPrs).Concat(result.StaffedMyPrs)
@@ -1255,7 +1449,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         => Dispatcher.UIThread.Post(() =>
         {
             _lastSentryIssues = issues;
+            _sentryLastPolled = DateTimeOffset.Now;
             RebuildSentryList();
+            RefreshPaneStatuses();
 
             var muted = issues.Count(i => _settings.IsSentryIssueMuted(i.Id));
             var active = issues.Count - muted;
@@ -1270,7 +1466,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         => Dispatcher.UIThread.Post(() =>
         {
             _lastFindings = findings;
+            _serviceLastPolled = DateTimeOffset.Now;
             RebuildServiceGroups();
+            RefreshPaneStatuses();
 
             var active = findings.Count(f => !f.IsMuted);
             AppInsightsStatus.Set(

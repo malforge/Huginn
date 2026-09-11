@@ -297,6 +297,19 @@
                             <StackPanel Spacing="8" Margin="0,8,0,0">
                                 <TextBlock Text="Watch these resources for failures and slowdowns:" FontSize="11" Opacity="0.5"/>
 
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="Look back over" FontSize="12" Opacity="0.7"/>
+                                        <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                                                   Text="Short reacts quickly but is noisy on low traffic. Long is steadier but slower to notice."/>
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="1" Width="150" FontSize="12"
+                                              VerticalAlignment="Center" Margin="8,0,0,0"
+                                              ItemsSource="{Binding WindowChoices}"
+                                              SelectedItem="{Binding SelectedWindow}"
+                                              ToolTip.Tip="How much history each rule examines"/>
+                                </Grid>
+
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Command="{Binding LoadComponentsCommand}" Content="⟳"
                                             FontSize="14" Width="32" HorizontalContentAlignment="Center"
@@ -411,389 +424,508 @@
         </Border>
 
         <!-- ═══ PR LIST ═══ -->
-        <ScrollViewer Grid.Row="2" IsVisible="{Binding !IsSettingsVisible}">
-            <StackPanel Margin="8,4">
-
-                <!-- 🔴 1. Failed validation (highest priority) -->
-                <Border IsVisible="{Binding HasFailedValidation}" Margin="4" Padding="10" CornerRadius="6"
-                        Background="#44FF2200" BorderBrush="#AAFF2200" BorderThickness="1">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="❌ Failed validation" FontWeight="SemiBold" FontSize="14"
-                                   Foreground="#FFCC2200"/>
-                        <ItemsControl ItemsSource="{Binding FailedValidationPrs}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:PullRequestItem">
-                                    <Border Margin="0,2" Padding="8,6" CornerRadius="4"
-                                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <StackPanel>
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="13"
-                                                               Opacity="0.5" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
-                                                    <TextBlock FontSize="12" Opacity="0.7">
-                                                        <Run Text="📦"/>
-                                                        <Run Text="{Binding RepositoryName}"/>
-                                                    </TextBlock>
-                                                    <TextBlock FontSize="12" Opacity="0.7">
-                                                        <Run Text="👤"/>
-                                                        <Run Text="{Binding CreatedByName}"/>
-                                                    </TextBlock>
-                                                    <TextBlock FontSize="12" Opacity="0.7"
-                                                               Text="{Binding Age}"/>
-                                                    <TextBlock FontSize="12" Foreground="#FFCC2200"
-                                                               Text="{Binding PipelineLabel}"/>
-                                                </StackPanel>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
-                                                        VerticalAlignment="Center" Margin="12,0,0,0">
-                                                <Button Classes="card-action"
-                                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        Content="🔔" FontSize="14"
-                                                        ToolTip.Tip="{Binding AcknowledgeTooltip}"/>
-                                                <Button Classes="card-action"
-                                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        ToolTip.Tip="Copy link to clipboard">
-                                                    <Path Width="14" Height="14" Stretch="Uniform"
-                                                          Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"
-                                                          Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
-                                                </Button>
-                                                <Button Classes="card-action"
-                                                        Content="Open in DevOps ↗"
-                                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                                        CommandParameter="{Binding}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
-
-                <!-- 🔴 Build failures (critical — no retry underway) -->
-                <Border IsVisible="{Binding HasFailedBuilds}" Margin="4" Padding="10" CornerRadius="6"
-                        Background="#44FF2200" BorderBrush="#AAFF2200" BorderThickness="1">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="🔴 Build failures" FontWeight="SemiBold" FontSize="14"
-                                   Foreground="#FFCC2200"/>
-                        <ItemsControl ItemsSource="{Binding FailedBuilds}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:BuildItem">
-                                    <views:BuildCardView DataContext="{Binding}"
-                                                         OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenBuildInBrowserCommand}"
-                                                         AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ToggleBuildAcknowledgedCommand}"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
-
-                <!-- One section per Application Insights resource, same reasoning as Sentry. -->
-                <ItemsControl ItemsSource="{Binding ServiceGroups}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:ServiceFindingGroup">
-                            <Border IsVisible="{Binding HasFindings}" Margin="4" Padding="10" CornerRadius="6"
-                                    Background="#33FF6600" BorderBrush="#88FF6600" BorderThickness="1">
+        <!-- ═══ PANES ═══
+             One pane per concern, in as many columns as the window allows: one when
+             narrow, four when maximised. Each scrolls on its own, so a long list in
+             one pane cannot push another off the screen. -->
+        <UniformGrid Grid.Row="2" IsVisible="{Binding !IsSettingsVisible}"
+                     Columns="{Binding LayoutColumns}">
+                <Border Margin="4" Padding="2" CornerRadius="6"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <Grid RowDefinitions="Auto,*,Auto">
+                        <TextBlock Grid.Row="0" Text="PULL REQUESTS" FontSize="12"
+                                   FontWeight="SemiBold" Opacity="0.55"
+                                   Margin="8,6,8,4"/>
+                        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                            <!-- 🔴 1. Failed validation (highest priority) -->
+                            <Border IsVisible="{Binding HasFailedValidation}" Margin="4" Padding="10" CornerRadius="6"
+                                    Background="#44FF2200" BorderBrush="#AAFF2200" BorderThickness="1">
                                 <StackPanel Spacing="6">
-                                    <Grid ColumnDefinitions="Auto,*,Auto">
-                                        <TextBlock FontWeight="SemiBold" FontSize="14"
-                                                   Foreground="#FFDD7700" VerticalAlignment="Center">
-                                            <Run Text="📉"/>
-                                            <Run Text="{Binding ResourceName}"/>
-                                        </TextBlock>
-                                        <ToggleButton Grid.Column="2" IsChecked="{Binding ShowMuted}"
-                                                      FontSize="12" Padding="8,3" VerticalAlignment="Center"
-                                                      IsVisible="{Binding HasMuted}"
-                                                      ToolTip.Tip="Switch this section over to the findings you have muted">
-                                            <ToggleButton.Content>
-                                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                                    <TextBlock Text="🔇"/>
-                                                    <TextBlock Text="{Binding MutedCount, StringFormat={}{0} muted}"/>
-                                                </StackPanel>
-                                            </ToggleButton.Content>
-                                        </ToggleButton>
-                                    </Grid>
-
-                                    <ScrollViewer MaxHeight="300"
-                                                  HorizontalScrollBarVisibility="Disabled"
-                                                  VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding Findings}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="models:ServiceFinding">
-                                                    <views:ServiceFindingCardView DataContext="{Binding}"
-                                                                                  MuteCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleServiceFindingMutedCommand}"
-                                                                                  DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissServiceFindingCommand}"/>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
+                                    <TextBlock Text="❌ Failed validation" FontWeight="SemiBold" FontSize="14"
+                                               Foreground="#FFCC2200"/>
+                                    <ItemsControl ItemsSource="{Binding FailedValidationPrs}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:PullRequestItem">
+                                                <Border Margin="0,2" Padding="8,6" CornerRadius="4"
+                                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="13"
+                                                                           Opacity="0.5" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                            </StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
+                                                                <TextBlock FontSize="12" Opacity="0.7">
+                                                                    <Run Text="📦"/>
+                                                                    <Run Text="{Binding RepositoryName}"/>
+                                                                </TextBlock>
+                                                                <TextBlock FontSize="12" Opacity="0.7">
+                                                                    <Run Text="👤"/>
+                                                                    <Run Text="{Binding CreatedByName}"/>
+                                                                </TextBlock>
+                                                                <TextBlock FontSize="12" Opacity="0.7"
+                                                                           Text="{Binding Age}"/>
+                                                                <TextBlock FontSize="12" Foreground="#FFCC2200"
+                                                                           Text="{Binding PipelineLabel}"/>
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                                                                    VerticalAlignment="Center" Margin="12,0,0,0">
+                                                            <Button Classes="card-action"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
+                                                                    CommandParameter="{Binding}"
+                                                                    Content="🔔" FontSize="14"
+                                                                    ToolTip.Tip="{Binding AcknowledgeTooltip}"/>
+                                                            <Button Classes="card-action"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip.Tip="Copy link to clipboard">
+                                                                <Path Width="14" Height="14" Stretch="Uniform"
+                                                                      Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"
+                                                                      Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
+                                                            </Button>
+                                                            <Button Classes="card-action"
+                                                                    Content="Open in DevOps ↗"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
+                                                                    CommandParameter="{Binding}"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                             </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
 
-                <!-- One section per Sentry project: each is a separate app, so their issues
-                     are never ranked against each other. -->
-                <ItemsControl ItemsSource="{Binding SentryGroups}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:SentryProjectGroup">
-                            <Border IsVisible="{Binding HasIssues}" Margin="4" Padding="10" CornerRadius="6"
-                                    Background="#33AA44FF" BorderBrush="#88AA44FF" BorderThickness="1">
+                            <!-- 🟠 2. Unstaffed PRs -->
+                            <Border IsVisible="{Binding HasUnstaffedPrs}" Margin="4" Padding="10" CornerRadius="6"
+                                    Background="#44FF8800" BorderBrush="#AAFF8800" BorderThickness="1">
                                 <StackPanel Spacing="6">
-                                    <Grid ColumnDefinitions="Auto,*,Auto">
-                                        <TextBlock FontWeight="SemiBold" FontSize="14"
-                                                   Foreground="#FF9944DD" VerticalAlignment="Center">
-                                            <Run Text="🐛"/>
-                                            <Run Text="{Binding Slug}"/>
-                                        </TextBlock>
-                                        <ToggleButton Grid.Column="2" IsChecked="{Binding ShowMuted}"
-                                                      FontSize="12" Padding="8,3" VerticalAlignment="Center"
-                                                      IsVisible="{Binding HasMuted}"
-                                                      ToolTip.Tip="Switch this section over to the issues you have muted">
-                                            <ToggleButton.Content>
-                                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                                    <TextBlock Text="🔇"/>
-                                                    <TextBlock Text="{Binding MutedCount, StringFormat={}{0} muted}"/>
-                                                </StackPanel>
-                                            </ToggleButton.Content>
-                                        </ToggleButton>
-                                    </Grid>
-
-                                    <ScrollViewer MaxHeight="300"
-                                                  HorizontalScrollBarVisibility="Disabled"
-                                                  VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding Issues}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="models:SentryIssueItem">
-                                                    <views:SentryIssueCardView DataContext="{Binding}"
-                                                                               OpenCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenSentryIssueCommand}"
-                                                                               MuteCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleSentryIssueMutedCommand}"
-                                                                               DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissSentryIssueCommand}"/>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
+                                    <TextBlock Text="⚠ Your PRs missing reviewers" FontWeight="SemiBold" FontSize="14"
+                                               Foreground="#FFDD6600"/>
+                                    <ItemsControl ItemsSource="{Binding UnstaffedPrs}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:PullRequestItem">
+                                                <Border Margin="0,2" Padding="8,6" CornerRadius="4"
+                                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="13"
+                                                                           Opacity="0.5" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                            </StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
+                                                                <TextBlock FontSize="12" Opacity="0.7">
+                                                                    <Run Text="📦"/>
+                                                                    <Run Text="{Binding RepositoryName}"/>
+                                                                </TextBlock>
+                                                                <TextBlock FontSize="12" Opacity="0.7"
+                                                                           Text="{Binding Age}"/>
+                                                                <TextBlock FontSize="12" Foreground="#FFDD6600"
+                                                                           Text="No reviewers assigned"/>
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                                                                    VerticalAlignment="Center" Margin="12,0,0,0">
+                                                            <Button Classes="card-action"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
+                                                                    CommandParameter="{Binding}"
+                                                                    Content="🔔" FontSize="14"
+                                                                    ToolTip.Tip="{Binding AcknowledgeTooltip}"/>
+                                                            <Button Classes="card-action"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip.Tip="Copy link to clipboard">
+                                                                <Path Width="14" Height="14" Stretch="Uniform"
+                                                                      Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"
+                                                                      Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
+                                                            </Button>
+                                                            <Button Classes="card-action"
+                                                                    Content="Open in DevOps ↗"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
+                                                                    CommandParameter="{Binding}"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                             </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
 
-                <!-- 🟠 Build failures (retry in progress — de-escalated) -->
-                <Border IsVisible="{Binding HasRetryingBuilds}" Margin="4" Padding="10" CornerRadius="6"
-                        Background="#44FF8800" BorderBrush="#AAFF8800" BorderThickness="1">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="⚠ Build failures (retrying)" FontWeight="SemiBold" FontSize="14"
-                                   Foreground="#FFDD6600"/>
-                        <ItemsControl ItemsSource="{Binding RetryingBuilds}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:BuildItem">
-                                    <views:BuildCardView DataContext="{Binding}"
-                                                         OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenBuildInBrowserCommand}"
-                                                         OpenRetryCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenRetryBuildCommand}"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
+                            <!-- 🟠 3. My PRs without autocomplete (risk of being forgotten) -->
+                            <Border IsVisible="{Binding HasAutoCompleteOffPrs}" Margin="4" Padding="10" CornerRadius="6"
+                                    Background="#44FF8800" BorderBrush="#AAFF8800" BorderThickness="1">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="⚠ Your PRs without autocomplete" FontWeight="SemiBold" FontSize="14"
+                                               Foreground="#FFDD6600"
+                                               ToolTip.Tip="These PRs aren't set to autocomplete — they won't merge automatically when policies pass, so they risk being forgotten."/>
+                                    <ItemsControl ItemsSource="{Binding AutoCompleteOffPrs}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:PullRequestItem">
+                                                <Border Margin="0,2" Padding="8,6" CornerRadius="4"
+                                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="13"
+                                                                           Opacity="0.5" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                            </StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
+                                                                <TextBlock FontSize="12" Opacity="0.7">
+                                                                    <Run Text="📦"/>
+                                                                    <Run Text="{Binding RepositoryName}"/>
+                                                                </TextBlock>
+                                                                <TextBlock FontSize="12" Opacity="0.7"
+                                                                           Text="{Binding Age}"/>
+                                                                <TextBlock Text="{Binding VoteSummary}" FontSize="12" Opacity="0.8"/>
+                                                                <TextBlock FontSize="12" Foreground="#FFDD6600"
+                                                                           Text="Autocomplete not set"/>
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                                                                    VerticalAlignment="Center" Margin="12,0,0,0">
+                                                            <Button Classes="card-action"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
+                                                                    CommandParameter="{Binding}"
+                                                                    Content="🔔" FontSize="14"
+                                                                    ToolTip.Tip="{Binding AcknowledgeTooltip}"/>
+                                                            <Button Classes="card-action"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip.Tip="Copy link to clipboard">
+                                                                <Path Width="14" Height="14" Stretch="Uniform"
+                                                                      Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"
+                                                                      Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
+                                                            </Button>
+                                                            <Button Classes="card-action"
+                                                                    Content="Open in DevOps ↗"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
+                                                                    CommandParameter="{Binding}"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
 
-                <!-- 🟠 2. Unstaffed PRs -->
-                <Border IsVisible="{Binding HasUnstaffedPrs}" Margin="4" Padding="10" CornerRadius="6"
-                        Background="#44FF8800" BorderBrush="#AAFF8800" BorderThickness="1">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="⚠ Your PRs missing reviewers" FontWeight="SemiBold" FontSize="14"
-                                   Foreground="#FFDD6600"/>
-                        <ItemsControl ItemsSource="{Binding UnstaffedPrs}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:PullRequestItem">
-                                    <Border Margin="0,2" Padding="8,6" CornerRadius="4"
-                                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <StackPanel>
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="13"
-                                                               Opacity="0.5" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
-                                                    <TextBlock FontSize="12" Opacity="0.7">
-                                                        <Run Text="📦"/>
-                                                        <Run Text="{Binding RepositoryName}"/>
-                                                    </TextBlock>
-                                                    <TextBlock FontSize="12" Opacity="0.7"
-                                                               Text="{Binding Age}"/>
-                                                    <TextBlock FontSize="12" Foreground="#FFDD6600"
-                                                               Text="No reviewers assigned"/>
-                                                </StackPanel>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
-                                                        VerticalAlignment="Center" Margin="12,0,0,0">
-                                                <Button Classes="card-action"
-                                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        Content="🔔" FontSize="14"
-                                                        ToolTip.Tip="{Binding AcknowledgeTooltip}"/>
-                                                <Button Classes="card-action"
-                                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        ToolTip.Tip="Copy link to clipboard">
-                                                    <Path Width="14" Height="14" Stretch="Uniform"
-                                                          Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"
-                                                          Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
-                                                </Button>
-                                                <Button Classes="card-action"
-                                                        Content="Open in DevOps ↗"
-                                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                                        CommandParameter="{Binding}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
+                            <!-- ✅ Awaiting your review -->
+                            <Grid Margin="8,8,8,4" ColumnDefinitions="Auto,*,Auto"
+                                  IsVisible="{Binding HasReviewSection}">
+                                <TextBlock Text="Awaiting your review" FontWeight="SemiBold" FontSize="14"
+                                           Opacity="0.7" VerticalAlignment="Center"/>
+                                <ToggleButton Grid.Column="2" IsChecked="{Binding ShowApproved}"
+                                              FontSize="12" Padding="8,3"
+                                              VerticalAlignment="Center"
+                                              IsVisible="{Binding HasHiddenApproved}"
+                                              ToolTip.Tip="Show/hide PRs you've already approved">
+                                    <ToggleButton.Content>
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <TextBlock Text="✅"/>
+                                            <TextBlock Text="{Binding HiddenApprovedCount, StringFormat={}{0} approved}"/>
+                                        </StackPanel>
+                                    </ToggleButton.Content>
+                                </ToggleButton>
+                            </Grid>
 
-                <!-- 🟠 3. My PRs without autocomplete (risk of being forgotten) -->
-                <Border IsVisible="{Binding HasAutoCompleteOffPrs}" Margin="4" Padding="10" CornerRadius="6"
-                        Background="#44FF8800" BorderBrush="#AAFF8800" BorderThickness="1">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="⚠ Your PRs without autocomplete" FontWeight="SemiBold" FontSize="14"
-                                   Foreground="#FFDD6600"
-                                   ToolTip.Tip="These PRs aren't set to autocomplete — they won't merge automatically when policies pass, so they risk being forgotten."/>
-                        <ItemsControl ItemsSource="{Binding AutoCompleteOffPrs}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:PullRequestItem">
-                                    <Border Margin="0,2" Padding="8,6" CornerRadius="4"
-                                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <StackPanel>
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="13"
-                                                               Opacity="0.5" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
-                                                    <TextBlock FontSize="12" Opacity="0.7">
-                                                        <Run Text="📦"/>
-                                                        <Run Text="{Binding RepositoryName}"/>
-                                                    </TextBlock>
-                                                    <TextBlock FontSize="12" Opacity="0.7"
-                                                               Text="{Binding Age}"/>
-                                                    <TextBlock Text="{Binding VoteSummary}" FontSize="12" Opacity="0.8"/>
-                                                    <TextBlock FontSize="12" Foreground="#FFDD6600"
-                                                               Text="Autocomplete not set"/>
-                                                </StackPanel>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
-                                                        VerticalAlignment="Center" Margin="12,0,0,0">
-                                                <Button Classes="card-action"
-                                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        Content="🔔" FontSize="14"
-                                                        ToolTip.Tip="{Binding AcknowledgeTooltip}"/>
-                                                <Button Classes="card-action"
-                                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        ToolTip.Tip="Copy link to clipboard">
-                                                    <Path Width="14" Height="14" Stretch="Uniform"
-                                                          Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"
-                                                          Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
-                                                </Button>
-                                                <Button Classes="card-action"
-                                                        Content="Open in DevOps ↗"
-                                                        Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                                        CommandParameter="{Binding}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
+                            <ItemsControl ItemsSource="{Binding ReadyToReviewPrs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:PullRequestItem">
+                                        <views:PrCardView DataContext="{Binding}"
+                                                          OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
+                                                          AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
+                                                          CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
 
-                <!-- ✅ Awaiting your review -->
-                <Grid Margin="8,8,8,4" ColumnDefinitions="Auto,*,Auto">
-                    <TextBlock Text="Awaiting your review" FontWeight="SemiBold" FontSize="14"
-                               Opacity="0.7" VerticalAlignment="Center"/>
-                    <ToggleButton Grid.Column="2" IsChecked="{Binding ShowApproved}"
-                                  FontSize="12" Padding="8,3"
-                                  VerticalAlignment="Center"
-                                  IsVisible="{Binding HasHiddenApproved}"
-                                  ToolTip.Tip="Show/hide PRs you've already approved">
-                        <ToggleButton.Content>
-                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                <TextBlock Text="✅"/>
-                                <TextBlock Text="{Binding HiddenApprovedCount, StringFormat={}{0} approved}"/>
+                            <!-- 📤 My active PRs -->
+                            <TextBlock Text="My active PRs" FontWeight="SemiBold" FontSize="14"
+                                       Margin="8,16,0,4" Opacity="0.7"
+                                       IsVisible="{Binding HasMyActivePrs}"/>
+
+                            <ItemsControl ItemsSource="{Binding MyActivePrs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:PullRequestItem">
+                                        <views:PrCardView DataContext="{Binding}" Opacity="0.85"
+                                                          OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
+                                                          CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- ✓ Acknowledged — pulled out of priority sections, neutral styling -->
+                            <TextBlock Text="✓ Acknowledged" FontWeight="SemiBold" FontSize="14"
+                                       Margin="8,16,0,4" Opacity="0.6"
+                                       IsVisible="{Binding HasAcknowledged}"/>
+
+                            <ItemsControl ItemsSource="{Binding AcknowledgedPrs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:PullRequestItem">
+                                        <views:PrCardView DataContext="{Binding}" Opacity="0.75"
+                                                          OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
+                                                          AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
+                                                          CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <ItemsControl ItemsSource="{Binding AcknowledgedBuilds}" Margin="4,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:BuildItem">
+                                        <views:BuildCardView DataContext="{Binding}" Opacity="0.75"
+                                                             OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenBuildInBrowserCommand}"
+                                                             OpenRetryCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenRetryBuildCommand}"
+                                                             AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ToggleBuildAcknowledgedCommand}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             </StackPanel>
-                        </ToggleButton.Content>
-                    </ToggleButton>
-                </Grid>
+                        </ScrollViewer>
+                        <TextBlock Grid.Row="2" FontSize="10" Opacity="0.45"
+                                   Margin="8,4,8,6" TextTrimming="CharacterEllipsis"
+                                   Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AdoPaneStatus}"/>
+                    </Grid>
+                </Border>
 
-                <ItemsControl ItemsSource="{Binding ReadyToReviewPrs}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="models:PullRequestItem">
-                            <views:PrCardView DataContext="{Binding}"
-                                              OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                              AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                              CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <Border Margin="4" Padding="2" CornerRadius="6"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <Grid RowDefinitions="Auto,*,Auto">
+                        <TextBlock Grid.Row="0" Text="BUILDS" FontSize="12"
+                                   FontWeight="SemiBold" Opacity="0.55"
+                                   Margin="8,6,8,4"/>
+                        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                            <!-- 🔴 Build failures (critical — no retry underway) -->
+                            <Border IsVisible="{Binding HasFailedBuilds}" Margin="4" Padding="10" CornerRadius="6"
+                                    Background="#44FF2200" BorderBrush="#AAFF2200" BorderThickness="1">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="🔴 Build failures" FontWeight="SemiBold" FontSize="14"
+                                               Foreground="#FFCC2200"/>
+                                    <ItemsControl ItemsSource="{Binding FailedBuilds}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:BuildItem">
+                                                <views:BuildCardView DataContext="{Binding}"
+                                                                     OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenBuildInBrowserCommand}"
+                                                                     AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ToggleBuildAcknowledgedCommand}"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
 
-                <!-- 📤 My active PRs -->
-                <TextBlock Text="My active PRs" FontWeight="SemiBold" FontSize="14"
-                           Margin="8,16,0,4" Opacity="0.7"
-                           IsVisible="{Binding HasMyActivePrs}"/>
+                            <!-- 🟠 Build failures (retry in progress — de-escalated) -->
+                            <Border IsVisible="{Binding HasRetryingBuilds}" Margin="4" Padding="10" CornerRadius="6"
+                                    Background="#44FF8800" BorderBrush="#AAFF8800" BorderThickness="1">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="⚠ Build failures (retrying)" FontWeight="SemiBold" FontSize="14"
+                                               Foreground="#FFDD6600"/>
+                                    <ItemsControl ItemsSource="{Binding RetryingBuilds}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:BuildItem">
+                                                <views:BuildCardView DataContext="{Binding}"
+                                                                     OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenBuildInBrowserCommand}"
+                                                                     OpenRetryCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenRetryBuildCommand}"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
 
-                <ItemsControl ItemsSource="{Binding MyActivePrs}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="models:PullRequestItem">
-                            <views:PrCardView DataContext="{Binding}" Opacity="0.85"
-                                              OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                              CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                        <TextBlock Grid.Row="2" FontSize="10" Opacity="0.45"
+                                   Margin="8,4,8,6" TextTrimming="CharacterEllipsis"
+                                   Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AdoPaneStatus}"/>
+                    </Grid>
+                </Border>
 
-                <!-- ✓ Acknowledged — pulled out of priority sections, neutral styling -->
-                <TextBlock Text="✓ Acknowledged" FontWeight="SemiBold" FontSize="14"
-                           Margin="8,16,0,4" Opacity="0.6"
-                           IsVisible="{Binding HasAcknowledged}"/>
+                <Border Margin="4" Padding="2" CornerRadius="6"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <!--
+                        Raised items scroll; the per-source summary underneath does not. The
+                        summary is how you tell quiet from broken, so it must never be the thing
+                        that scrolls out of sight.
+                    -->
+                    <Grid RowDefinitions="Auto,*,Auto,Auto">
+                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="8,4,8,4">
+                            <TextBlock Text="CRASHES" FontSize="12"
+                                       FontWeight="SemiBold" Opacity="0.55"
+                                       VerticalAlignment="Center"/>
+                            <ToggleButton Grid.Column="2" FontSize="11" Padding="6,2"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding ShowMutedCrashes}"
+                                          IsVisible="{Binding HasMutedCrashes}"
+                                          ToolTip.Tip="Show the ones you have muted">
+                                <ToggleButton.Content>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Text="🔇"/>
+                                        <TextBlock Text="{Binding MutedCrashCount}"/>
+                                    </StackPanel>
+                                </ToggleButton.Content>
+                            </ToggleButton>
+                        </Grid>
 
-                <ItemsControl ItemsSource="{Binding AcknowledgedPrs}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="models:PullRequestItem">
-                            <views:PrCardView DataContext="{Binding}" Opacity="0.75"
-                                              OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                              AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                              CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <ItemsControl ItemsSource="{Binding CrashActions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:SentryIssueItem">
+                                            <views:SentryIssueCardView DataContext="{Binding}"
+                                                                       OpenCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenSentryIssueCommand}"
+                                                                       MuteCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleSentryIssueMutedCommand}"
+                                                                       DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissSentryIssueCommand}"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
 
-                <ItemsControl ItemsSource="{Binding AcknowledgedBuilds}" Margin="4,0">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="models:BuildItem">
-                            <views:BuildCardView DataContext="{Binding}" Opacity="0.75"
-                                                 OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenBuildInBrowserCommand}"
-                                                 OpenRetryCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenRetryBuildCommand}"
-                                                 AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ToggleBuildAcknowledgedCommand}"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-        </ScrollViewer>
+                                <TextBlock IsVisible="{Binding !CrashActions.Count}" Margin="8,10"
+                                           FontSize="12" Opacity="0.45" TextWrapping="Wrap"
+                                           Text="Nothing raised. New and returning crashes appear here."/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <StackPanel Grid.Row="2">
+                            <Separator Margin="8,2,8,2"/>
+                            <ItemsControl ItemsSource="{Binding CrashSummaries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SourceSummary">
+                                        <Button Background="Transparent" BorderThickness="0"
+                                                Padding="8,5" Margin="0,1"
+                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenSummaryCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Open this project in Sentry">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                            <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,8,0"
+                                                     VerticalAlignment="Center"
+                                                     Fill="#FFE2A03C" IsVisible="{Binding HasFlagged}"/>
+                                            <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,8,0"
+                                                     VerticalAlignment="Center"
+                                                     Fill="#FF3FA34D" IsVisible="{Binding !HasFlagged}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Line}" FontSize="11"
+                                                       Opacity="0.6" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                            <TextBlock Grid.Column="3" Text="↗" FontSize="11" Opacity="0.5"
+                                                       Margin="8,0,0,0" VerticalAlignment="Center"
+                                                       IsVisible="{Binding HasUrl}"/>
+                                        </Grid>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="3" FontSize="10" Opacity="0.45"
+                                   Margin="8,4,8,6" TextTrimming="CharacterEllipsis"
+                                   Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SentryPaneStatus}"/>
+                    </Grid>
+                </Border>
+
+                <Border Margin="4" Padding="2" CornerRadius="6"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <!--
+                        Raised items scroll; the per-source summary underneath does not. The
+                        summary is how you tell quiet from broken, so it must never be the thing
+                        that scrolls out of sight.
+                    -->
+                    <Grid RowDefinitions="Auto,*,Auto,Auto">
+                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="8,4,8,4">
+                            <TextBlock Text="SERVICES" FontSize="12"
+                                       FontWeight="SemiBold" Opacity="0.55"
+                                       VerticalAlignment="Center"/>
+                            <ToggleButton Grid.Column="2" FontSize="11" Padding="6,2"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding ShowMutedServices}"
+                                          IsVisible="{Binding HasMutedServices}"
+                                          ToolTip.Tip="Show the ones you have muted">
+                                <ToggleButton.Content>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Text="🔇"/>
+                                        <TextBlock Text="{Binding MutedServiceCount}"/>
+                                    </StackPanel>
+                                </ToggleButton.Content>
+                            </ToggleButton>
+                        </Grid>
+
+                        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <ItemsControl ItemsSource="{Binding ServiceActions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:ServiceFinding">
+                                            <views:ServiceFindingCardView DataContext="{Binding}"
+                                                                          MuteCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleServiceFindingMutedCommand}"
+                                                                          OpenCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenServiceFindingCommand}"
+                                                                          DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissServiceFindingCommand}"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock IsVisible="{Binding !ServiceActions.Count}" Margin="8,10"
+                                           FontSize="12" Opacity="0.45" TextWrapping="Wrap"
+                                           Text="Nothing raised. Failing routes, slow routes and dead resources appear here."/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <StackPanel Grid.Row="2">
+                            <Separator Margin="8,2,8,2"/>
+                            <ItemsControl ItemsSource="{Binding ServiceSummaries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SourceSummary">
+                                        <Button Background="Transparent" BorderThickness="0"
+                                                Padding="8,5" Margin="0,1"
+                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                                IsEnabled="{Binding HasUrl}"
+                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenSummaryCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Open this resource in the Azure portal">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                            <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,8,0"
+                                                     VerticalAlignment="Center"
+                                                     Fill="#FFE2A03C" IsVisible="{Binding HasFlagged}"/>
+                                            <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,8,0"
+                                                     VerticalAlignment="Center"
+                                                     Fill="#FF3FA34D" IsVisible="{Binding !HasFlagged}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Line}" FontSize="11"
+                                                       Opacity="0.6" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                            <TextBlock Grid.Column="3" Text="↗" FontSize="11" Opacity="0.5"
+                                                       Margin="8,0,0,0" VerticalAlignment="Center"
+                                                       IsVisible="{Binding HasUrl}"/>
+                                        </Grid>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="3" FontSize="10" Opacity="0.45"
+                                   Margin="8,4,8,6" TextTrimming="CharacterEllipsis"
+                                   Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ServicePaneStatus}"/>
+                    </Grid>
+                </Border>
+        </UniformGrid>
 
         <!-- ═══ STATUS BAR ═══ -->
         <Border Grid.Row="3" Padding="12,6" Background="{DynamicResource SystemAltHighColor}">

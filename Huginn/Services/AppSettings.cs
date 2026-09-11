@@ -62,6 +62,12 @@ public sealed partial class AppSettings
     /// window, so a faster cadence mostly re-reads the same numbers.</summary>
     public int AppInsightsPollIntervalMinutes { get; set; } = 15;
 
+    /// <summary>
+    /// How far back each rule looks. Short reacts fast but is noisy on low traffic; long is
+    /// steady but slow to notice. There is no right answer, so it is yours to set.
+    /// </summary>
+    public int AppInsightsWindowMinutes { get; set; } = 60;
+
     // Application Insights
     public string AppInsightsTenantId { get; set; } = "";
 
@@ -71,8 +77,18 @@ public sealed partial class AppSettings
     /// </summary>
     public string AppInsightsClientId { get; set; } = "";
 
-    /// <summary>Watched resources, keyed by query app id with the resource name as the value.</summary>
+    /// <summary>
+    /// Watched resources, keyed by query app id. The value is the full ARM id where it is known,
+    /// and a bare resource name for entries saved before the id was kept.
+    /// </summary>
     public Dictionary<string, string> WatchedAppInsights { get; set; } = [];
+
+    /// <summary>Resource name for a watched entry, whichever form the value takes.</summary>
+    public static string NameOf(string value) =>
+        value.StartsWith('/') ? value[(value.LastIndexOf('/') + 1)..] : value;
+
+    /// <summary>ARM id for a watched entry, empty when only the name was stored.</summary>
+    public static string ResourceIdOf(string value) => value.StartsWith('/') ? value : "";
 
     // Window state (only size/position are recorded when in Normal state)
     public double? WindowX { get; set; }
@@ -329,6 +345,7 @@ public sealed partial class AppSettings
             MutedFindings = MutedFindings,
             FlaggedFindings = FlaggedFindings,
             AppInsightsPollIntervalMinutes = AppInsightsPollIntervalMinutes,
+            AppInsightsWindowMinutes = AppInsightsWindowMinutes,
             AppInsightsTenantId = AppInsightsTenantId,
             AppInsightsClientId = AppInsightsClientId,
             WatchedAppInsights = WatchedAppInsights,
@@ -374,6 +391,8 @@ public sealed partial class AppSettings
                 FlaggedFindings = dto.FlaggedFindings ?? [],
                 AppInsightsPollIntervalMinutes =
                     dto.AppInsightsPollIntervalMinutes > 0 ? dto.AppInsightsPollIntervalMinutes : 15,
+                AppInsightsWindowMinutes =
+                    dto.AppInsightsWindowMinutes > 0 ? dto.AppInsightsWindowMinutes : 60,
                 AppInsightsTenantId = dto.AppInsightsTenantId ?? "",
                 AppInsightsClientId = dto.AppInsightsClientId ?? "",
                 WatchedAppInsights = dto.WatchedAppInsights ?? [],
@@ -408,6 +427,7 @@ public sealed partial class AppSettings
         public Dictionary<string, double>? MutedFindings { get; set; }
         public Dictionary<string, string>? FlaggedFindings { get; set; }
         public int AppInsightsPollIntervalMinutes { get; set; } = 15;
+        public int AppInsightsWindowMinutes { get; set; } = 60;
         public string? AppInsightsTenantId { get; set; }
         public string? AppInsightsClientId { get; set; }
         public Dictionary<string, string>? WatchedAppInsights { get; set; }

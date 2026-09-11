@@ -17,11 +17,15 @@ public partial class MainWindow : Window
 
     private AppSettings? Settings => (DataContext as MainWindowViewModel)?.Settings;
 
+    /// <summary>Width each pane needs before another column is worth having.</summary>
+    private const double PaneWidth = 420;
+
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
 
         RestoreWindowState();
+        UpdateLayoutColumns();
 
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
@@ -43,6 +47,22 @@ public partial class MainWindow : Window
 
         (DataContext as IDisposable)?.Dispose();
         base.OnClosing(e);
+    }
+
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        UpdateLayoutColumns();
+    }
+
+    private void UpdateLayoutColumns()
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+
+        // Only 1, 2 or 4. Three columns leaves the fourth pane orphaned on a row of its own,
+        // which looks like a mistake rather than a layout.
+        var fits = (int)(Bounds.Width / PaneWidth);
+        vm.LayoutColumns = fits >= 4 ? 4 : fits >= 2 ? 2 : 1;
     }
 
     private void OnWindowDeactivated(object? sender, EventArgs e)

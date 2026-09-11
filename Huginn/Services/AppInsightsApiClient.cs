@@ -62,6 +62,8 @@ public sealed class AppInsightsApiClient : IDisposable
                         ? a.GetString() ?? "" : "",
                     SubscriptionName = name,
                     ResourceGroup = ResourceGroupOf(c),
+                    ResourceId = c.TryGetProperty("id", out JsonElement rid)
+                        ? rid.GetString() ?? "" : "",
                 });
             }
         }
@@ -83,9 +85,24 @@ public sealed class AppInsightsApiClient : IDisposable
         foreach (JsonElement c in table.GetProperty("columns").EnumerateArray())
             columns.Add(c.GetProperty("name").GetString() ?? "");
 
-        List<List<JsonElement>> rows = [];
+        // Read every cell out while the document is still alive: a JsonElement is a window
+        // into it, and the document is disposed the moment this method returns.
+        List<IReadOnlyList<string>> rows = [];
         foreach (JsonElement r in table.GetProperty("rows").EnumerateArray())
-            rows.Add([.. r.EnumerateArray()]);
+        {
+            List<string> cells = [];
+            foreach (JsonElement cell in r.EnumerateArray())
+            {
+                cells.Add(cell.ValueKind switch
+                {
+                    JsonValueKind.String => cell.GetString() ?? "",
+                    JsonValueKind.Null or JsonValueKind.Undefined => "",
+                    _ => cell.GetRawText(),
+                });
+            }
+
+            rows.Add(cells);
+        }
 
         return new QueryTable(columns, rows);
     }
