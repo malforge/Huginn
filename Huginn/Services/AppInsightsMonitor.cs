@@ -90,7 +90,12 @@ public sealed class AppInsightsMonitor
         // A finding that has gone away stops being known, so its return is news again.
         _known.IntersectWith(findings.Select(f => f.Id));
 
-        findings.Sort((a, b) => b.Magnitude.CompareTo(a.Magnitude));
+        // Severity first, then size within a kind. Magnitudes are not comparable across kinds.
+        findings.Sort((a, b) =>
+        {
+            int severity = b.Severity.CompareTo(a.Severity);
+            return severity != 0 ? severity : b.Magnitude.CompareTo(a.Magnitude);
+        });
 
         return new Snapshot(findings, raised);
     }

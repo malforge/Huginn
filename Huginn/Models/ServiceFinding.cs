@@ -52,6 +52,22 @@ public sealed partial class ServiceFinding : ObservableObject
     /// </summary>
     public string Id => $"{AppId}|{Kind}|{Subject}";
 
+    /// <summary>
+    /// How loudly this kind of problem asks to be dealt with, highest first. Needed because
+    /// <see cref="Magnitude"/> carries a different unit per kind, a percentage for a failure
+    /// rate, milliseconds for latency and a call count for a dependency, so ordering on it alone
+    /// ranks a slow route above one failing every call.
+    /// </summary>
+    public int Severity => Kind switch
+    {
+        // Not answering, or answering wrongly, beats answering slowly.
+        FindingKind.FailureRate => 4,
+        FindingKind.NoTraffic => 3,
+        FindingKind.Dependency => 2,
+        FindingKind.Latency => 1,
+        _ => 0,
+    };
+
     /// <summary>Sparkline of this measurement over the window, as block characters.</summary>
     public string Spark { get; set; } = "";
 
