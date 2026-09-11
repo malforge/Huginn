@@ -27,17 +27,12 @@ public sealed partial class SentryIssueItem : ObservableObject
         }
     }
 
-    /// <summary>Set when more than one project is in view, so the project is worth naming.</summary>
-    public bool ShowProject { get; set; }
-
     /// <summary>The one-line detail under the title, with redundant parts left out.</summary>
     public string Subtitle
     {
         get
         {
-            List<string> parts = [ShortCode];
-            if (ShowProject && ProjectSlug.Length > 0) parts.Add(ProjectSlug);
-            parts.Add(Impact);
+            List<string> parts = [ShortCode, Impact];
             if (TotalAge.Length > 0) parts.Add($"{TotalAge} old");
             if (Age.Length > 0) parts.Add(Age == "just now" ? "seen just now" : $"seen {Age} ago");
             return string.Join(" · ", parts);

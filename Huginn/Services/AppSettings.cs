@@ -86,6 +86,12 @@ public sealed partial class AppSettings
     /// <summary>The Sentry connection has everything it needs to attempt a poll.</summary>
     public bool IsSentryConfigured =>
         !string.IsNullOrWhiteSpace(SentryOrganization)
+        && !string.IsNullOrWhiteSpace(GetSentryToken())
+        && WatchedSentryProjects.Count > 0;
+
+    /// <summary>Credentials are present, whether or not anything has been picked to watch.</summary>
+    public bool HasSentryCredentials =>
+        !string.IsNullOrWhiteSpace(SentryOrganization)
         && !string.IsNullOrWhiteSpace(GetSentryToken());
 
     public string? GetPat()

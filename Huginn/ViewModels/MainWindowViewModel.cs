@@ -40,7 +40,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     public ObservableCollection<BuildItem> RetryingBuilds { get; } = [];
     public ObservableCollection<PullRequestItem> AcknowledgedPrs { get; } = [];
     public ObservableCollection<BuildItem> AcknowledgedBuilds { get; } = [];
-    public ObservableCollection<SentryIssueItem> SentryIssues { get; } = [];
+    /// <summary>One section per watched Sentry project, since each is a separate app.</summary>
+    public ObservableCollection<SentryProjectGroup> SentryGroups { get; } = [];
 
     /// <summary>Health of every source, in the order they appear in settings.</summary>
     public ObservableCollection<ConnectionStatus> Connections { get; } = [];
@@ -66,18 +67,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _hasFailedBuilds;
     [ObservableProperty] private bool _hasRetryingBuilds;
     [ObservableProperty] private bool _hasAcknowledged;
-    [ObservableProperty] private bool _hasSentryIssues;
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasMutedSentryIssues))]
-    private int _mutedSentryCount;
-
-    public bool HasMutedSentryIssues => MutedSentryCount > 0;
-
-    /// <summary>
-    /// Swaps the list over to the muted issues. It filters rather than appends, because appending
-    /// would put a heavily muted issue below a trivial live one and break the impact ordering.
-    /// </summary>
-    [ObservableProperty] private bool _showMutedSentryIssues;
     [ObservableProperty] private bool _isSettingsVisible;
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private bool _isRefreshing;
@@ -160,6 +149,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (_settings.IsSentryConfigured)
             SentryStatus.Set(ConnectionState.Connected, "Configured, not yet polled");
+        else if (_settings.HasSentryCredentials)
+            SentryStatus.Set(ConnectionState.NotConfigured, "No projects selected");
 
         _ = ResumeAzureSignInAsync();
 
@@ -239,10 +230,58 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void ToggleSettings()
     {
-        IsSettingsVisible = !IsSettingsVisible;
-        if (!IsSettingsVisible) return;
+        if (IsSettingsVisible)
+        {
+            CloseSettings();
+            return;
+        }
+
+        IsSettingsVisible = true;
+        _settingsOnOpen = ConnectionFingerprint();
         ExpandConnectionsNeedingAttention();
         _ = LoadPipelinesAsync();
+        _ = LoadSentryProjectsAsync();
+    }
+
+    /// <summary>
+    /// Everything typed into settings is committed when the panel closes. Leaving edits to an
+    /// explicit save is how a credential that can only be copied once gets lost.
+    /// </summary>
+    public void CloseSettings()
+    {
+        IsSettingsVisible = false;
+        CommitSettings();
+    }
+
+    /// <summary>Writes the settings out, reconnecting when the connection details have moved.</summary>
+    public void CommitSettings()
+    {
+        var before = _settingsOnOpen;
+        SaveAllConnections();
+        _settingsOnOpen = ConnectionFingerprint();
+
+        if (before is not null && before != _settingsOnOpen)
+            _ = ConnectAsync();
+    }
+
+    private string? _settingsOnOpen;
+
+    /// <summary>Identifies the connection details, so a reconnect only happens when they change.</summary>
+    private string ConnectionFingerprint() => string.Join(
+        '\u001f',
+        Organization?.Trim(), Project?.Trim(), Pat?.Trim(),
+        SentryOrganization?.Trim(), SentryRegionUrl?.Trim(), SentryToken?.Trim(),
+        AppInsightsTenantId?.Trim(), AppInsightsClientId?.Trim());
+
+    private void SaveAllConnections()
+    {
+        SaveAdoConnection();
+        SaveSentryConnection();
+        SaveAppInsightsConnection();
+        _settings.MonitorMyBuilds = MonitorMyBuilds;
+        _settings.WatchedPipelineIds = AvailablePipelines
+            .Where(p => p.IsSelected).Select(p => p.Id).ToList();
+        _settings.Save();
     }
 
     /// <summary>
@@ -302,8 +341,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    partial void OnShowMutedSentryIssuesChanged(bool value) => RebuildSentryList();
-
     partial void OnShowApprovedChanged(bool value)
     {
         if (_lastPollResult != null)
@@ -344,7 +381,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task LoadSentryProjectsAsync()
     {
-        if (!_settings.IsSentryConfigured
+        if (!_settings.HasSentryCredentials
             && (string.IsNullOrWhiteSpace(SentryOrganization) || string.IsNullOrWhiteSpace(SentryToken)))
         {
             SentryProjectPickerStatus = "Enter the organisation and token first";
@@ -367,11 +404,20 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             AvailableSentryProjects.Clear();
             foreach (var slug in slugs)
             {
-                AvailableSentryProjects.Add(new SelectableSentryProject
+                var project = new SelectableSentryProject
                 {
                     Slug = slug,
                     IsSelected = selected.Contains(slug),
-                });
+                };
+
+                // Ticking a box is an explicit choice and must not need a separate save.
+                project.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(SelectableSentryProject.IsSelected))
+                        PersistWatchedSentryProjects();
+                };
+
+                AvailableSentryProjects.Add(project);
             }
 
             SentryProjectPickerStatus = $"{slugs.Count} project{(slugs.Count != 1 ? "s" : "")} found";
@@ -387,45 +433,39 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Rebuilds the visible issue list from the last poll. Separate from the poll handler so the
-    /// filter can be flipped without re-running everything else.
+    /// Rebuilds the per-project sections from the last poll. Separate from the poll handler so a
+    /// mute or a dismiss can repaint without re-running everything else.
     /// </summary>
     private void RebuildSentryList()
     {
-        var issues = _lastSentryIssues;
-
-        // Naming the project only earns its space when more than one is in view.
-        var multipleProjects = issues.Select(i => i.ProjectSlug).Distinct().Count() > 1;
-
-        var muted = 0;
-        foreach (var issue in issues)
+        foreach (var issue in _lastSentryIssues)
         {
-            issue.ShowProject = multipleProjects;
             issue.IsMuted = _settings.IsSentryIssueMuted(issue.Id);
             issue.IsFlagged = _settings.IsSentryIssueFlagged(issue.Id);
             issue.FlagReason = _settings.GetSentryFlagReason(issue.Id);
-            if (issue.IsMuted) muted++;
         }
 
-        MutedSentryCount = muted;
-
-        // Unmuting the last one would otherwise leave the muted-only view showing an empty box
-        // with no obvious way back. Setting this re-enters once and settles.
-        if (ShowMutedSentryIssues && muted == 0)
+        // Groups are updated in place rather than rebuilt, so a section keeps its own muted
+        // toggle across polls.
+        foreach (var byProject in _lastSentryIssues.GroupBy(i => i.ProjectSlug).OrderBy(g => g.Key))
         {
-            ShowMutedSentryIssues = false;
-            return;
+            var group = SentryGroups.FirstOrDefault(g => g.Slug == byProject.Key);
+            if (group is null)
+            {
+                group = new SentryProjectGroup { Slug = byProject.Key };
+                SentryGroups.Add(group);
+            }
+
+            group.SetIssues([.. byProject]);
         }
 
-        SentryIssues.Clear();
-        foreach (var issue in issues)
+        // A project that has stopped reporting, or been unwatched, loses its section.
+        var live = _lastSentryIssues.Select(i => i.ProjectSlug).ToHashSet();
+        for (var i = SentryGroups.Count - 1; i >= 0; i--)
         {
-            // Each side keeps the order the monitor put them in, rather than interleaving two
-            // rankings into one confusing list.
-            if (issue.IsMuted == ShowMutedSentryIssues) SentryIssues.Add(issue);
+            if (!live.Contains(SentryGroups[i].Slug)) SentryGroups.RemoveAt(i);
         }
 
-        HasSentryIssues = issues.Count > 0;
     }
 
     [RelayCommand]
@@ -464,6 +504,20 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         issue.IsFlagged = false;
         issue.FlagReason = "";
         RebuildSentryList();
+    }
+
+    private void PersistWatchedSentryProjects()
+    {
+        _settings.WatchedSentryProjects = AvailableSentryProjects
+            .Where(p => p.IsSelected).Select(p => p.Slug).ToList();
+        _settings.Save();
+
+        SentryStatus.Set(
+            _settings.IsSentryConfigured ? ConnectionState.Connected : ConnectionState.NotConfigured,
+            _settings.IsSentryConfigured
+                ? $"Watching {_settings.WatchedSentryProjects.Count} project"
+                  + (_settings.WatchedSentryProjects.Count == 1 ? "" : "s")
+                : "No projects selected");
     }
 
     [RelayCommand]
@@ -730,11 +784,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _settings.SentryOrganization = SentryOrganization.Trim();
         _settings.SentryRegionUrl = SentryRegionUrl.Trim();
         if (!string.IsNullOrWhiteSpace(SentryToken)) _settings.SetSentryToken(SentryToken.Trim());
-        if (AvailableSentryProjects.Count > 0)
-        {
-            _settings.WatchedSentryProjects = AvailableSentryProjects
-                .Where(p => p.IsSelected).Select(p => p.Slug).ToList();
-        }
         _settings.Save();
     }
 
@@ -745,36 +794,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _settings.WatchedAppInsightsAppIds = AvailableComponents
             .Where(c => c.IsSelected).Select(c => c.AppId).ToList();
         _settings.Save();
-    }
-
-    [RelayCommand]
-    private async Task SaveAndConnectAsync()
-    {
-        _settings.Organization = Organization.Trim();
-        _settings.Project = Project.Trim();
-        _settings.SentryOrganization = SentryOrganization.Trim();
-        _settings.SentryRegionUrl = SentryRegionUrl.Trim();
-        _settings.AppInsightsTenantId = AppInsightsTenantId.Trim();
-        _settings.AppInsightsClientId = AppInsightsClientId.Trim();
-        _settings.WatchedAppInsightsAppIds = AvailableComponents
-            .Where(c => c.IsSelected).Select(c => c.AppId).ToList();
-        _settings.MonitorMyBuilds = MonitorMyBuilds;
-        _settings.WatchedPipelineIds = AvailablePipelines
-            .Where(p => p.IsSelected).Select(p => p.Id).ToList();
-        _settings.Save();
-
-        if (!string.IsNullOrWhiteSpace(Pat))
-            _settings.SetPat(Pat.Trim());
-
-        if (!string.IsNullOrWhiteSpace(SentryToken))
-            _settings.SetSentryToken(SentryToken.Trim());
-
-        SentryStatus.Set(
-            _settings.IsSentryConfigured ? ConnectionState.Connected : ConnectionState.NotConfigured,
-            _settings.IsSentryConfigured ? "Configured, not yet polled" : "");
-
-        IsSettingsVisible = false;
-        await ConnectAsync();
     }
 
     [RelayCommand]
@@ -1138,8 +1157,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OpenSettings()
     {
         IsSettingsVisible = true;
+        _settingsOnOpen = ConnectionFingerprint();
         ExpandConnectionsNeedingAttention();
         _ = LoadPipelinesAsync();
+        _ = LoadSentryProjectsAsync();
     }
 
     [RelayCommand]

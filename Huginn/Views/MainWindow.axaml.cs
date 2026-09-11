@@ -36,6 +36,11 @@ public partial class MainWindow : Window
         Activated -= OnWindowActivated;
         Deactivated -= OnWindowDeactivated;
         SaveWindowState();
+
+        // Settings are committed on close rather than on an explicit save, so closing the window
+        // with the panel open must not throw the edits away either.
+        (DataContext as MainWindowViewModel)?.CommitSettings();
+
         (DataContext as IDisposable)?.Dispose();
         base.OnClosing(e);
     }

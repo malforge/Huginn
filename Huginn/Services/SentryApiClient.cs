@@ -89,7 +89,8 @@ public sealed class SentryApiClient : IDisposable
     /// Unresolved issues across the organisation, newest activity first.
     /// </summary>
     /// <param name="projectSlugs">
-    /// Restricts the result to these projects. Empty returns every project the token can read.
+    /// The projects to report on. Empty returns nothing: watching everything by default would
+    /// make the noisiest setting the one you get without choosing.
     /// </param>
     public async Task<List<SentryIssueItem>> GetIssuesAsync(
         string organizationSlug,
@@ -107,6 +108,7 @@ public sealed class SentryApiClient : IDisposable
 
         HashSet<string> wanted = new(projectSlugs, StringComparer.OrdinalIgnoreCase);
         List<SentryIssueItem> issues = [];
+        if (wanted.Count == 0) return issues;
         foreach (JsonElement issue in doc.RootElement.EnumerateArray())
         {
             string project = issue.TryGetProperty("project", out JsonElement p)
@@ -114,7 +116,7 @@ public sealed class SentryApiClient : IDisposable
                 ? ps.GetString() ?? "" : "";
 
             // Filtering here rather than in the query keeps one request for any number of projects.
-            if (wanted.Count > 0 && !wanted.Contains(project)) continue;
+            if (!wanted.Contains(project)) continue;
 
             issues.Add(new SentryIssueItem
             {
