@@ -15,7 +15,8 @@ public sealed class PollingService : IDisposable
     private AdoApiClient? _client;
     private string _myUserId = "";
     private CancellationTokenSource? _cts;
-    private Task? _pollLoop;
+    private Task? _adoLoop;
+    private Task? _sentryLoop;
     private volatile bool _authFailed;
     private readonly AppSettings _settings;
     private readonly PrMonitor _prMonitor = new();
@@ -23,6 +24,7 @@ public sealed class PollingService : IDisposable
     private readonly SentryMonitor _sentryMonitor = new();
     private SentryApiClient? _sentry;
     private readonly SemaphoreSlim _pollLock = new(1, 1);
+    private readonly SemaphoreSlim _sentryLock = new(1, 1);
 
     public event Action<PollResult>? PollCompleted;
     public event Action<PullRequestItem>? NewPullRequestDetected;
@@ -79,7 +81,11 @@ public sealed class PollingService : IDisposable
 
         _buildMonitor.SetInitialLookback(TimeSpan.FromHours(2));
         _cts = new CancellationTokenSource();
-        _pollLoop = PollLoopAsync(_cts.Token);
+
+        // Each source keeps its own cadence: they are independent, and forcing the slow one to
+        // the fast one only re-reads the same data.
+        _adoLoop = LoopAsync(PollAzureDevOpsOnceAsync, () => _settings.PollIntervalMinutes, _cts.Token);
+        _sentryLoop = LoopAsync(PollSentryOnceAsync, () => _settings.SentryPollIntervalMinutes, _cts.Token);
         return true;
     }
 
@@ -117,7 +123,11 @@ public sealed class PollingService : IDisposable
     public event Action<string>? SentryFailed;
     public event Action<List<SentryIssueItem>>? SentryPolled;
 
-    public async Task PollNowAsync(CancellationToken ct = default)
+    /// <summary>Refreshes every source at once, for the Refresh button.</summary>
+    public Task PollNowAsync(CancellationToken ct = default) =>
+        Task.WhenAll(PollAzureDevOpsOnceAsync(ct), PollSentryOnceAsync(ct));
+
+    private async Task PollAzureDevOpsOnceAsync(CancellationToken ct = default)
     {
         if (_client == null || string.IsNullOrEmpty(_myUserId)) return;
         if (!await _pollLock.WaitAsync(0, ct)) return;
@@ -126,16 +136,7 @@ public sealed class PollingService : IDisposable
         {
             StatusChanged?.Invoke("Refreshing…");
 
-            // Sentry throttles the per-issue release lookups, so a poll there can take tens of
-            // seconds. Run it alongside Azure DevOps rather than holding PR and build results
-            // behind it. The two Azure DevOps passes stay sequential because they share one
-            // client, whose project id is resolved lazily.
-            var sentryTask = PollSentryAsync(ct);
-            var adoTask = PollAzureDevOpsAsync(ct);
-
-            // Azure DevOps is published the moment it lands rather than waiting on Sentry, which
-            // can spend tens of seconds on throttled release lookups.
-            var (prSnap, buildSnap) = await adoTask;
+            var (prSnap, buildSnap) = await PollAzureDevOpsAsync(ct);
 
             // Auth failure during this poll: snapshots are empty stubs from 401 responses.
             // Skip PollCompleted (would wipe the last-known UI state) and the "all clear"
@@ -166,9 +167,6 @@ public sealed class PollingService : IDisposable
             if (buildPart != "all clear")
                 combined = combined == "all clear" ? buildPart : $"{combined}, {buildPart}";
             StatusChanged?.Invoke($"Last updated: {DateTime.Now:HH:mm}  ·  {combined}");
-
-            // Let Sentry finish in its own time; it has already published its own list.
-            await sentryTask;
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -193,9 +191,10 @@ public sealed class PollingService : IDisposable
     /// Polls Sentry in isolation. A failure here reports itself and returns null rather than
     /// throwing, so it cannot take the Azure DevOps half of the poll down with it.
     /// </summary>
-    private async Task<SentryMonitor.SentrySnapshot?> PollSentryAsync(CancellationToken ct)
+    private async Task<SentryMonitor.SentrySnapshot?> PollSentryOnceAsync(CancellationToken ct = default)
     {
         if (_sentry is null) return null;
+        if (!await _sentryLock.WaitAsync(0, ct)) return null;
 
         try
         {
@@ -227,18 +226,24 @@ public sealed class PollingService : IDisposable
             SentryFailed?.Invoke($"Sentry poll failed: {ex.Message}");
             return null;
         }
+        finally
+        {
+            _sentryLock.Release();
+        }
     }
 
-    private async Task PollLoopAsync(CancellationToken ct)
+    /// <summary>Runs one source on its own schedule until the service stops.</summary>
+    private async Task LoopAsync(
+        Func<CancellationToken, Task> poll, Func<int> intervalMinutes, CancellationToken ct)
     {
-        await PollNowAsync(ct);
+        await poll(ct);
 
         while (!ct.IsCancellationRequested && !_authFailed)
         {
             try
             {
-                await Task.Delay(TimeSpan.FromMinutes(_settings.PollIntervalMinutes), ct);
-                await PollNowAsync(ct);
+                await Task.Delay(TimeSpan.FromMinutes(Math.Max(1, intervalMinutes())), ct);
+                await poll(ct);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
@@ -252,5 +257,6 @@ public sealed class PollingService : IDisposable
     {
         Stop();
         _pollLock.Dispose();
+        _sentryLock.Dispose();
     }
 }

@@ -89,6 +89,29 @@ public sealed class AzureSignIn
         return (credential, record.Username);
     }
 
+    /// <summary>
+    /// Silently acquires a token to confirm the stored sign-in still works. A stored record only
+    /// proves a file exists; it says nothing about whether the account is still usable.
+    /// </summary>
+    public async Task<bool> IsStillSignedInAsync(TokenCredential credential, CancellationToken ct = default)
+    {
+        try
+        {
+            await Task.Run(
+                () => credential.GetTokenAsync(new TokenRequestContext(ArmScope), ct).AsTask(), ct);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"Stored Azure sign-in for {_slot} is no longer usable: {ex.Message}");
+            return false;
+        }
+    }
+
     /// <summary>Forgets the stored account, so the next sign-in prompts again.</summary>
     public void SignOut()
     {

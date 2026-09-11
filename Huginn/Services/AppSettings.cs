@@ -26,6 +26,12 @@ public sealed partial class AppSettings
     public string Project { get; set; } = "";
     public int PollIntervalMinutes { get; set; } = 5;
 
+    /// <summary>
+    /// Sentry is polled less often than Azure DevOps. Each poll re-reads the same window and then
+    /// pays a throttled request per issue for its version, so a faster cadence buys nothing.
+    /// </summary>
+    public int SentryPollIntervalMinutes { get; set; } = 10;
+
     // Sentry
     public string SentryOrganization { get; set; } = "";
     public string SentryRegionUrl { get; set; } = "https://sentry.io";
@@ -251,6 +257,7 @@ public sealed partial class AppSettings
             Organization = Organization,
             Project = Project,
             PollIntervalMinutes = PollIntervalMinutes,
+            SentryPollIntervalMinutes = SentryPollIntervalMinutes,
             SentryOrganization = SentryOrganization,
             SentryRegionUrl = SentryRegionUrl,
             WatchedSentryProjects = WatchedSentryProjects,
@@ -288,6 +295,8 @@ public sealed partial class AppSettings
                 Organization = dto.Organization ?? "",
                 Project = dto.Project ?? "",
                 PollIntervalMinutes = dto.PollIntervalMinutes > 0 ? dto.PollIntervalMinutes : 5,
+                SentryPollIntervalMinutes =
+                    dto.SentryPollIntervalMinutes > 0 ? dto.SentryPollIntervalMinutes : 10,
                 SentryOrganization = dto.SentryOrganization ?? "",
                 SentryRegionUrl = string.IsNullOrWhiteSpace(dto.SentryRegionUrl)
                     ? "https://sentry.io"
@@ -320,6 +329,7 @@ public sealed partial class AppSettings
         public string? Organization { get; set; }
         public string? Project { get; set; }
         public int PollIntervalMinutes { get; set; }
+        public int SentryPollIntervalMinutes { get; set; } = 10;
         public string? SentryOrganization { get; set; }
         public string? SentryRegionUrl { get; set; }
         public List<string>? WatchedSentryProjects { get; set; }

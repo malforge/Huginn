@@ -544,16 +544,21 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var (_, account) = await signIn.GetCredentialAsync(allowPrompt: false);
+            var (credential, account) = await signIn.GetCredentialAsync(allowPrompt: false);
+
+            if (!await signIn.IsStillSignedInAsync(credential))
+            {
+                AppInsightsAccount = "";
+                AppInsightsStatus.Set(ConnectionState.AuthFailed, "Sign-in expired, sign in again");
+                return;
+            }
+
             AppInsightsAccount = account;
-            // Name what is missing rather than the state it is in: the banner is a list of things
-            // to act on, and "signed in" is not one of them.
-            AppInsightsStatus.Set(
-                _settings.IsAppInsightsConfigured ? ConnectionState.Connected : ConnectionState.NotConfigured,
-                _settings.IsAppInsightsConfigured ? $"Signed in as {account}" : "No resources selected");
+            ReportAppInsightsState();
         }
         catch (Exception ex)
         {
+            AppInsightsAccount = "";
             AppInsightsStatus.Set(ConnectionState.AuthFailed, ex.Message);
         }
     }
@@ -579,7 +584,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             var (_, account) = await CreateAzureSignIn().GetCredentialAsync(allowPrompt: true, ct);
             AppInsightsAccount = account;
             SaveAppInsightsConnection();
-            AppInsightsStatus.Set(ConnectionState.Connected, $"Signed in as {account}");
+            ReportAppInsightsState();
             await LoadComponentsAsync();
         }
         catch (OperationCanceledException)
@@ -610,6 +615,26 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>
+    /// Being signed in and watching nothing is not the same as being signed out, and reporting
+    /// them identically reads as having been logged out.
+    /// </summary>
+    private void ReportAppInsightsState()
+    {
+        if (string.IsNullOrEmpty(AppInsightsAccount))
+        {
+            AppInsightsStatus.Set(ConnectionState.NotConfigured, "Not signed in");
+            return;
+        }
+
+        var watched = _settings.WatchedAppInsightsAppIds.Count;
+        AppInsightsStatus.Set(
+            watched > 0 ? ConnectionState.Connected : ConnectionState.NotConfigured,
+            watched > 0
+                ? $"{AppInsightsAccount}, watching {watched} resource{(watched == 1 ? "" : "s")}"
+                : $"{AppInsightsAccount}, no resources selected");
+    }
+
     [RelayCommand]
     private void SignOutOfAzure()
     {
@@ -618,7 +643,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         AvailableComponents.Clear();
         FilteredComponents.Clear();
         ComponentPickerStatus = "";
-        AppInsightsStatus.Set(ConnectionState.NotConfigured);
+        ReportAppInsightsState();
     }
 
     [RelayCommand]
@@ -635,9 +660,14 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         ComponentPickerStatus = "Loading resources…";
         try
         {
-            var (credential, _) = await signIn.GetCredentialAsync(allowPrompt: false);
+            // The user pressed a button, so falling through to the browser when the cached
+            // sign-in has lapsed is better than telling them interaction is required. Bounded,
+            // because a browser that is closed rather than completed never comes back.
+            using var cts = new CancellationTokenSource(SignInTimeout);
+            var (credential, account) = await signIn.GetCredentialAsync(allowPrompt: true, cts.Token);
+            AppInsightsAccount = account;
             using var client = new AppInsightsApiClient(credential);
-            var found = await client.GetComponentsAsync();
+            var found = await client.GetComponentsAsync(cts.Token);
 
             var selected = new HashSet<string>(
                 AvailableComponents.Where(c => c.IsSelected).Select(c => c.AppId));
@@ -649,18 +679,30 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 .OrderByDescending(c => selected.Contains(c.AppId))
                 .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
-                AvailableComponents.Add(new SelectableComponent
+                var component = new SelectableComponent
                 {
                     AppId = c.AppId,
                     DisplayName = c.Name,
                     Qualifier = c.Qualifier,
                     IsSelected = selected.Contains(c.AppId),
-                });
+                };
+
+                component.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(SelectableComponent.IsSelected))
+                        PersistWatchedComponents();
+                };
+
+                AvailableComponents.Add(component);
             }
 
             ComponentPickerStatus = $"{found.Count} resource{(found.Count != 1 ? "s" : "")} visible to you";
             ComponentFilter = "";
             ApplyComponentFilter();
+        }
+        catch (OperationCanceledException)
+        {
+            ComponentPickerStatus = "Sign-in cancelled or timed out";
         }
         catch (Exception ex)
         {
@@ -670,6 +712,14 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
             IsLoadingComponents = false;
         }
+    }
+
+    private void PersistWatchedComponents()
+    {
+        _settings.WatchedAppInsightsAppIds = AvailableComponents
+            .Where(c => c.IsSelected).Select(c => c.AppId).ToList();
+        _settings.Save();
+        ReportAppInsightsState();
     }
 
     private void ApplyComponentFilter()
@@ -704,7 +754,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         return RunConnectionTestAsync(AppInsightsStatus, async () =>
         {
-            var (credential, account) = await signIn.GetCredentialAsync(allowPrompt: false);
+            var (credential, account) = await signIn.GetCredentialAsync(allowPrompt: true);
             using var client = new AppInsightsApiClient(credential);
 
             // Cheapest query that proves both the token and the resource are usable.
