@@ -10,15 +10,47 @@ namespace Huginn.Services;
 
 public sealed partial class AppSettings
 {
-    private static readonly string SettingsDir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Huginn");
+    /// <summary>
+    /// Names a separate set of settings and credentials, from the HUGINN_PROFILE environment
+    /// variable. Without it every build on the machine shares one settings file, so running a
+    /// development build alongside an installed one has each overwriting the other's work.
+    /// </summary>
+    /// <remarks>
+    /// Read from the environment directly rather than by pointing APPDATA elsewhere:
+    /// <see cref="Environment.GetFolderPath"/> asks the shell for the known folder and ignores
+    /// the variable entirely.
+    /// </remarks>
+    public static string Profile { get; } =
+        Environment.GetEnvironmentVariable("HUGINN_PROFILE")?.Trim() ?? "";
+
+    private static string FolderName => Profile.Length == 0 ? "Huginn" : $"Huginn-{Profile}";
+
+    /// <summary>Prefix for this profile's credential entries.</summary>
+    public static string CredentialPrefix => Profile.Length == 0 ? "Huginn" : $"Huginn-{Profile}";
+
+    internal static readonly string SettingsDir =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), FolderName);
 
     private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
 
-    private const string CredentialTarget = "Huginn:ADO:PAT";
-    private const string SentryCredentialTarget = "Huginn:Sentry:Token";
+    private static readonly string CredentialTarget = $"{CredentialPrefix}:ADO:PAT";
+    private static readonly string SentryCredentialTarget = $"{CredentialPrefix}:Sentry:Token";
+
+    /// <summary>
+    /// The same entries under the default profile. A named profile falls back to them so a
+    /// development run works without re-entering tokens, and never writes to them.
+    /// </summary>
+    private const string SharedCredentialTarget = "Huginn:ADO:PAT";
+    private const string SharedSentryCredentialTarget = "Huginn:Sentry:Token";
 
     private readonly ICredentialStore _credentialStore;
+
+    /// <summary>
+    /// Settings this build has no property for, kept so they survive being written back. Saving
+    /// serialises a fixed set of fields, so without this any key a different version owns is
+    /// erased the moment this one saves, and two versions on a machine wipe each other.
+    /// </summary>
+    private Dictionary<string, JsonElement>? _unrecognised;
     private string? _cachedPat;
     private string? _cachedSentryToken;
 
@@ -146,7 +178,8 @@ public sealed partial class AppSettings
 
     public string? GetPat()
     {
-        _cachedPat ??= _credentialStore.Get(CredentialTarget);
+        _cachedPat ??= _credentialStore.Get(CredentialTarget)
+                       ?? ReadShared(SharedCredentialTarget);
         return _cachedPat;
     }
 
@@ -158,7 +191,8 @@ public sealed partial class AppSettings
 
     public string? GetSentryToken()
     {
-        _cachedSentryToken ??= _credentialStore.Get(SentryCredentialTarget);
+        _cachedSentryToken ??= _credentialStore.Get(SentryCredentialTarget)
+                               ?? ReadShared(SharedSentryCredentialTarget);
         return _cachedSentryToken;
     }
 
@@ -175,6 +209,13 @@ public sealed partial class AppSettings
     /// Auth tokens are account level rather than organisation level, so this needs only the data
     /// region and is always openable.
     /// </summary>
+    /// <summary>
+    /// Borrows a credential from the default profile, read only. Returns nothing under the
+    /// default profile itself, where it would just be the same lookup twice.
+    /// </summary>
+    private string? ReadShared(string target) =>
+        Profile.Length == 0 ? null : _credentialStore.Get(target);
+
     public string GetSentryTokenPageUrl()
     {
         string region = string.IsNullOrWhiteSpace(SentryRegionUrl)
@@ -354,6 +395,7 @@ public sealed partial class AppSettings
         Directory.CreateDirectory(SettingsDir);
         var json = JsonSerializer.Serialize(new SettingsDto
         {
+            Unrecognised = _unrecognised,
             Organization = Organization,
             Project = Project,
             PollIntervalMinutes = PollIntervalMinutes,
@@ -398,6 +440,7 @@ public sealed partial class AppSettings
 
             return new AppSettings(credentialStore)
             {
+                _unrecognised = dto.Unrecognised,
                 Organization = dto.Organization ?? "",
                 Project = dto.Project ?? "",
                 PollIntervalMinutes = dto.PollIntervalMinutes > 0 ? dto.PollIntervalMinutes : 5,
@@ -440,6 +483,10 @@ public sealed partial class AppSettings
 
     private sealed class SettingsDto
     {
+        /// <summary>Everything in the file that none of the properties below claim.</summary>
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement>? Unrecognised { get; set; }
+
         public string? Organization { get; set; }
         public string? Project { get; set; }
         public int PollIntervalMinutes { get; set; }

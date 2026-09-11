@@ -25,7 +25,7 @@ public sealed class AzureSignIn
     public static readonly string[] QueryScope = ["https://api.applicationinsights.io/.default"];
 
     private static readonly string RecordDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Huginn", "auth");
+        AppSettings.SettingsDir, "auth");
 
     private readonly string _slot;
     private readonly string? _tenantId;
