@@ -430,7 +430,9 @@
              one pane cannot push another off the screen. -->
         <UniformGrid Grid.Row="2" IsVisible="{Binding !IsSettingsVisible}"
                      Columns="{Binding LayoutColumns}">
-                <Border Margin="4" Padding="2" CornerRadius="6"
+                <!-- Pull requests and builds share a column: neither ever runs to many rows, and the width they give back goes to crashes and services. -->
+                <Grid RowDefinitions="*,Auto">
+                    <Border Grid.Row="0" Margin="4" Padding="2" CornerRadius="6"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1">
                     <Grid RowDefinitions="Auto,*,Auto">
@@ -583,7 +585,7 @@
                     </Grid>
                 </Border>
 
-                <Border Margin="4" Padding="2" CornerRadius="6"
+                    <Border Grid.Row="1" MaxHeight="300" Margin="4" Padding="2" CornerRadius="6"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1">
                     <Grid RowDefinitions="Auto,*,Auto">
@@ -636,6 +638,7 @@
                                    Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AdoPaneStatus}"/>
                     </Grid>
                 </Border>
+                </Grid>
 
                 <Border Margin="4" Padding="2" CornerRadius="6"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"

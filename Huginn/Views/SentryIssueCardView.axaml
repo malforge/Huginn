@@ -52,18 +52,19 @@
 
             <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6"
                         VerticalAlignment="Center" Margin="8,0,0,0">
-                <Button Content="Dismiss" FontSize="11"
+                <Button Content="✕" FontSize="12" Padding="7,3"
                         IsVisible="{Binding CanDismiss}"
                         Command="{Binding #root.DismissCommand}"
                         CommandParameter="{Binding}"
-                        ToolTip.Tip="Stop pinning this to the top. It stays in the list."/>
-                <Button Content="{Binding MuteLabel}" FontSize="11"
+                        ToolTip.Tip="Dismiss: stop pinning this to the top. It stays in the list."/>
+                <Button Content="{Binding MuteIcon}" FontSize="12" Padding="7,3"
                         Command="{Binding #root.MuteCommand}"
                         CommandParameter="{Binding}"
                         ToolTip.Tip="{Binding MuteTooltip}"/>
-                <Button Content="Open in Sentry ↗" FontSize="11"
+                <Button Content="↗" FontSize="12" Padding="7,3"
                         Command="{Binding #root.OpenCommand}"
-                        CommandParameter="{Binding}"/>
+                        CommandParameter="{Binding}"
+                        ToolTip.Tip="Open this issue in Sentry"/>
             </StackPanel>
         </Grid>
     </Border>

@@ -85,6 +85,7 @@ public sealed partial class ServiceFinding : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MuteLabel))]
+    [NotifyPropertyChangedFor(nameof(MuteIcon))]
     [NotifyPropertyChangedFor(nameof(MuteTooltip))]
     [NotifyPropertyChangedFor(nameof(CardOpacity))]
     private bool _isMuted;
@@ -93,6 +94,9 @@ public sealed partial class ServiceFinding : ObservableObject
     public double MutedAtMagnitude { get; set; }
 
     public string MuteLabel => IsMuted ? "Unmute" : "Mute";
+
+    /// <summary>The label as a glyph. Card rows are narrow, and the tooltip carries the words.</summary>
+    public string MuteIcon => IsMuted ? "🔊" : "🔇";
 
     public string MuteTooltip => IsMuted
         ? "Unmute, so this finding is listed and alerts normally again"

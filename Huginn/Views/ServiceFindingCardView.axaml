@@ -40,11 +40,11 @@
 
             <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6"
                         VerticalAlignment="Center" Margin="8,0,0,0">
-                <Button Content="{Binding MuteLabel}" FontSize="11"
+                <Button Content="{Binding MuteIcon}" FontSize="12" Padding="7,3"
                         Command="{Binding #root.MuteCommand}"
                         CommandParameter="{Binding}"
                         ToolTip.Tip="{Binding MuteTooltip}"/>
-                <Button Content="Open in portal ↗" FontSize="11"
+                <Button Content="↗" FontSize="12" Padding="7,3"
                         IsVisible="{Binding HasPortalUrl}"
                         Command="{Binding #root.OpenCommand}"
                         CommandParameter="{Binding}"

@@ -137,6 +137,7 @@ public sealed partial class SentryIssueItem : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MuteTooltip))]
     [NotifyPropertyChangedFor(nameof(MuteLabel))]
+    [NotifyPropertyChangedFor(nameof(MuteIcon))]
     [NotifyPropertyChangedFor(nameof(CardOpacity))]
     private bool _isMuted;
 
@@ -145,6 +146,9 @@ public sealed partial class SentryIssueItem : ObservableObject
         : "Mute at its current size. It comes back if it regresses or roughly doubles.";
 
     public string MuteLabel => IsMuted ? "Unmute" : "Mute";
+
+    /// <summary>The label as a glyph. Card rows are narrow, and the tooltip carries the words.</summary>
+    public string MuteIcon => IsMuted ? "🔊" : "🔇";
 
     /// <summary>Muted issues sit in the same list, told apart by being visibly quieter.</summary>
     public double CardOpacity => IsMuted ? 0.55 : 1.0;

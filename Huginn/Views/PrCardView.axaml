@@ -36,7 +36,7 @@
                           Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
                 </Button>
                 <Button Classes="card-action"
-                        Content="Open ↗"
+                        Content="↗"
                         Command="{Binding #root.OpenCommand}"
                         CommandParameter="{Binding}"
                         ToolTip.Tip="Open this pull request in Azure DevOps"/>
