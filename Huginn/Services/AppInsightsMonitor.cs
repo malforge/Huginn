@@ -22,6 +22,9 @@ public sealed class AppInsightsMonitor
     /// <summary>Calls a route needs in the window before its rates mean anything.</summary>
     private const int MinimumCalls = 10;
 
+    /// <summary>Distinct failing result codes named on a card before it stops being readable.</summary>
+    private const int MaxCodesPerRoute = 3;
+
     /// <summary>Share of calls that must fail before a route is worth raising.</summary>
     private const double FailureRateThreshold = 0.10;
 
@@ -116,7 +119,8 @@ public sealed class AppInsightsMonitor
             | where toint(resultCode) != 404
             | summarize total = sum(itemCount),
                         failed = sumif(itemCount, success == false),
-                        p95 = round(percentile(duration, 95))
+                        p95 = round(percentile(duration, 95)),
+                        codes = strcat_array(make_set_if(resultCode, success == false, {MaxCodesPerRoute}), ", ")
                       by name
             | where total >= {MinimumCalls}
             """, ct);
@@ -124,7 +128,8 @@ public sealed class AppInsightsMonitor
         int nameAt = routes.IndexOf("name");
         int totalAt = routes.IndexOf("total");
         int failedAt = routes.IndexOf("failed");
-        int p95At = routes.IndexOf("p95");
+            int p95At = routes.IndexOf("p95");
+        int codesAt = routes.IndexOf("codes");
 
         long traffic = 0;
 
@@ -146,7 +151,7 @@ public sealed class AppInsightsMonitor
                     AppId = component.AppId,
                     ResourceId = component.ResourceId,
                     Subject = name,
-                    Detail = $"{rate:P0} of {total:N0} calls failed",
+                    Detail = $"{rate:P0} of {total:N0} calls failed{Codes(Text(row, codesAt))}",
                     Magnitude = rate * 100,
                 });
             }
@@ -216,6 +221,15 @@ public sealed class AppInsightsMonitor
 
         return findings;
     }
+
+    /// <summary>
+    /// The result codes behind a failing route, as a phrase. Which code it is decides what to do
+    /// about it, so a bare failure rate sends you to the portal to find out.
+    /// </summary>
+    private static string Codes(string codes) =>
+        codes.Length == 0 ? ""
+        : codes.Contains(',') ? $", codes {codes}"
+        : $", code {codes}";
 
     /// <summary>Buckets the window into roughly twenty points, never finer than a minute.</summary>
     private static int BucketMinutes(int windowMinutes) => Math.Max(1, windowMinutes / 20);
