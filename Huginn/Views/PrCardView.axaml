@@ -72,16 +72,25 @@
                                Text="{Binding Age}"/>
                 </Grid>
 
-                <!-- Votes and pipeline -->
-                <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,4,0,0">
-                    <TextBlock Text="{Binding VoteSummary}" FontSize="12" Opacity="0.8"
+                <!--
+                    Votes, pipeline and the alert note. A Grid rather than a horizontal StackPanel,
+                    which hands every child its full desired width and so never trims.
+                -->
+                <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
+                    <TextBlock Grid.Column="0" Text="{Binding VoteSummary}" FontSize="12" Opacity="0.8"
                                TextTrimming="CharacterEllipsis"/>
-                    <StackPanel Orientation="Horizontal" Spacing="4"
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="16,0,0,0"
                                 IsVisible="{Binding HasPipelineStatus}">
                         <TextBlock Text="{Binding PipelineIcon}" FontSize="12"/>
                         <TextBlock Text="{Binding PipelineLabel}" FontSize="12" Opacity="0.8"/>
                     </StackPanel>
-                </StackPanel>
+                    <TextBlock Grid.Column="2" Margin="16,0,0,0" FontSize="12"
+                               Text="{Binding #root.AlertNote}"
+                               Foreground="{Binding #root.AlertBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               IsVisible="{Binding #root.AlertNote,
+                                           Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                </Grid>
             </StackPanel>
         </DockPanel>
     </Border>

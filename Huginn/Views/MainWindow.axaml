@@ -449,53 +449,12 @@
                                     <ItemsControl ItemsSource="{Binding FailedValidationPrs}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="models:PullRequestItem">
-                                                <Border Margin="0,2" Padding="8,6" CornerRadius="4"
-                                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                                <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="13"
-                                                                           Opacity="0.5" VerticalAlignment="Center"/>
-                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                            </StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
-                                                                <TextBlock FontSize="12" Opacity="0.7">
-                                                                    <Run Text="📦"/>
-                                                                    <Run Text="{Binding RepositoryName}"/>
-                                                                </TextBlock>
-                                                                <TextBlock FontSize="12" Opacity="0.7">
-                                                                    <Run Text="👤"/>
-                                                                    <Run Text="{Binding CreatedByName}"/>
-                                                                </TextBlock>
-                                                                <TextBlock FontSize="12" Opacity="0.7"
-                                                                           Text="{Binding Age}"/>
-                                                                <TextBlock FontSize="12" Foreground="#FFCC2200"
-                                                                           Text="{Binding PipelineLabel}"/>
-                                                            </StackPanel>
-                                                        </StackPanel>
-                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
-                                                                    VerticalAlignment="Center" Margin="12,0,0,0">
-                                                            <Button Classes="card-action"
-                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                                    CommandParameter="{Binding}"
-                                                                    Content="🔔" FontSize="14"
-                                                                    ToolTip.Tip="{Binding AcknowledgeTooltip}"/>
-                                                            <Button Classes="card-action"
-                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
-                                                                    CommandParameter="{Binding}"
-                                                                    ToolTip.Tip="Copy link to clipboard">
-                                                                <Path Width="14" Height="14" Stretch="Uniform"
-                                                                      Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"
-                                                                      Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
-                                                            </Button>
-                                                            <Button Classes="card-action"
-                                                                    Content="Open in DevOps ↗"
-                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                                                    CommandParameter="{Binding}"/>
-                                                        </StackPanel>
-                                                    </Grid>
-                                                </Border>
+                                                <views:PrCardView DataContext="{Binding}"
+                                                                  AlertNote="{Binding PipelineLabel}"
+                                                                  AlertBrush="#FFCC2200"
+                                                                  OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
+                                                                  AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
+                                                                  CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -511,49 +470,12 @@
                                     <ItemsControl ItemsSource="{Binding UnstaffedPrs}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="models:PullRequestItem">
-                                                <Border Margin="0,2" Padding="8,6" CornerRadius="4"
-                                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                                <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="13"
-                                                                           Opacity="0.5" VerticalAlignment="Center"/>
-                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                            </StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
-                                                                <TextBlock FontSize="12" Opacity="0.7">
-                                                                    <Run Text="📦"/>
-                                                                    <Run Text="{Binding RepositoryName}"/>
-                                                                </TextBlock>
-                                                                <TextBlock FontSize="12" Opacity="0.7"
-                                                                           Text="{Binding Age}"/>
-                                                                <TextBlock FontSize="12" Foreground="#FFDD6600"
-                                                                           Text="No reviewers assigned"/>
-                                                            </StackPanel>
-                                                        </StackPanel>
-                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
-                                                                    VerticalAlignment="Center" Margin="12,0,0,0">
-                                                            <Button Classes="card-action"
-                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                                    CommandParameter="{Binding}"
-                                                                    Content="🔔" FontSize="14"
-                                                                    ToolTip.Tip="{Binding AcknowledgeTooltip}"/>
-                                                            <Button Classes="card-action"
-                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
-                                                                    CommandParameter="{Binding}"
-                                                                    ToolTip.Tip="Copy link to clipboard">
-                                                                <Path Width="14" Height="14" Stretch="Uniform"
-                                                                      Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"
-                                                                      Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
-                                                            </Button>
-                                                            <Button Classes="card-action"
-                                                                    Content="Open in DevOps ↗"
-                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                                                    CommandParameter="{Binding}"/>
-                                                        </StackPanel>
-                                                    </Grid>
-                                                </Border>
+                                                <views:PrCardView DataContext="{Binding}"
+                                                                  AlertNote="No reviewers assigned"
+                                                                  AlertBrush="#FFDD6600"
+                                                                  OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
+                                                                  AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
+                                                                  CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -570,50 +492,12 @@
                                     <ItemsControl ItemsSource="{Binding AutoCompleteOffPrs}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="models:PullRequestItem">
-                                                <Border Margin="0,2" Padding="8,6" CornerRadius="4"
-                                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                                <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="13"
-                                                                           Opacity="0.5" VerticalAlignment="Center"/>
-                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                            </StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,2,0,0">
-                                                                <TextBlock FontSize="12" Opacity="0.7">
-                                                                    <Run Text="📦"/>
-                                                                    <Run Text="{Binding RepositoryName}"/>
-                                                                </TextBlock>
-                                                                <TextBlock FontSize="12" Opacity="0.7"
-                                                                           Text="{Binding Age}"/>
-                                                                <TextBlock Text="{Binding VoteSummary}" FontSize="12" Opacity="0.8"/>
-                                                                <TextBlock FontSize="12" Foreground="#FFDD6600"
-                                                                           Text="Autocomplete not set"/>
-                                                            </StackPanel>
-                                                        </StackPanel>
-                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
-                                                                    VerticalAlignment="Center" Margin="12,0,0,0">
-                                                            <Button Classes="card-action"
-                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                                    CommandParameter="{Binding}"
-                                                                    Content="🔔" FontSize="14"
-                                                                    ToolTip.Tip="{Binding AcknowledgeTooltip}"/>
-                                                            <Button Classes="card-action"
-                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
-                                                                    CommandParameter="{Binding}"
-                                                                    ToolTip.Tip="Copy link to clipboard">
-                                                                <Path Width="14" Height="14" Stretch="Uniform"
-                                                                      Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"
-                                                                      Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
-                                                            </Button>
-                                                            <Button Classes="card-action"
-                                                                    Content="Open in DevOps ↗"
-                                                                    Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                                                    CommandParameter="{Binding}"/>
-                                                        </StackPanel>
-                                                    </Grid>
-                                                </Border>
+                                                <views:PrCardView DataContext="{Binding}"
+                                                                  AlertNote="Autocomplete not set"
+                                                                  AlertBrush="#FFDD6600"
+                                                                  OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
+                                                                  AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
+                                                                  CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
