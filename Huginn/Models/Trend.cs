@@ -62,6 +62,52 @@ public static class Trend
         return "steady all window";
     }
 
+    /// <summary>
+    /// Describes a series of event counts. Separate from <see cref="Describe"/> because that one
+    /// compares medians, and a crash that fires in one hour out of twenty-four has a median of
+    /// zero on both sides however large the burst was.
+    /// </summary>
+    /// <param name="values">Events per bucket.</param>
+    /// <param name="bucketMinutes">How long one bucket covers.</param>
+    public static string DescribeCounts(IReadOnlyList<double> values, int bucketMinutes)
+    {
+        if (values.Count < 4) return "";
+
+        double total = values.Sum();
+
+        // Below this there is no shape to read, and a caption would only dress a guess up as one.
+        if (total < MinEventsToDescribe) return "";
+
+        int active = values.Count(v => v > 0);
+
+        // Concentration first: whether the events arrived in one lump or as a steady drip is the
+        // distinction an event total on its own can never make, and the two want different responses.
+        if (active <= 2)
+        {
+            int last = values.Count - 1;
+            while (last > 0 && values[last] <= 0) last--;
+
+            int minutesAgo = (values.Count - 1 - last) * bucketMinutes;
+            return minutesAgo == 0 ? "one burst, still going" : $"one burst {Humanise(minutesAgo)} ago";
+        }
+
+        int half = values.Count / 2;
+        double before = values.Take(half).Sum();
+        double after = values.Skip(half).Sum();
+
+        if (before <= 0) return "started this window";
+
+        double ratio = after / before;
+
+        if (ratio >= 2) return "stepped up";
+        if (ratio <= 0.5) return "easing off";
+
+        return active >= values.Count / 2 ? "constant" : "on and off";
+    }
+
+    /// <summary>Fewer events than this in the whole window is too little to characterise.</summary>
+    private const int MinEventsToDescribe = 5;
+
     /// <summary>First bucket from which the series stays meaningfully above where it was.</summary>
     private static int FirstSustainedRise(IReadOnlyList<double> values, double baseline)
     {

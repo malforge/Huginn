@@ -513,8 +513,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         foreach (var issue in _lastSentryIssues)
         {
             issue.IsMuted = _settings.IsSentryIssueMuted(issue.Id);
-            issue.IsFlagged = _settings.IsSentryIssueFlagged(issue.Id);
-            issue.FlagReason = _settings.GetSentryFlagReason(issue.Id);
+            if (issue.IsMuted) issue.IsWidespread = false;
+            issue.ApplyRaise(
+                _settings.IsSentryIssueFlagged(issue.Id),
+                _settings.GetSentryFlagReason(issue.Id));
         }
 
         MutedCrashCount = _lastSentryIssues.Count(i => i.IsMuted);

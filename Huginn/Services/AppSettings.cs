@@ -49,6 +49,19 @@ public sealed partial class AppSettings
     public Dictionary<string, string> FlaggedSentryIssues { get; set; } = [];
 
     /// <summary>
+    /// Issues Huginn has already seen, so "new" means new to the user rather than new to this
+    /// process. Held in memory, every restart adopted the whole backlog as the baseline and
+    /// nothing already broken could ever be raised again.
+    /// </summary>
+    public List<string> KnownSentryIssues { get; set; } = [];
+
+    /// <summary>
+    /// Whether a first Sentry poll has ever completed. Separate from the list being empty, which
+    /// is also what an organisation with nothing unresolved looks like.
+    /// </summary>
+    public bool SentryBaselineTaken { get; set; }
+
+    /// <summary>
     /// Service findings the user has muted, keyed by finding id, holding how bad each was at the
     /// time. Kept separate from the Sentry equivalents rather than unified, because renaming
     /// persisted keys would silently discard whatever is already muted.
@@ -264,6 +277,14 @@ public sealed partial class AppSettings
     public string GetSentryFlagReason(string issueId) =>
         FlaggedSentryIssues.TryGetValue(issueId, out string? reason) ? reason : "";
 
+    /// <summary>Records the issues seen in a poll as the baseline that later polls compare to.</summary>
+    public void SetSentryBaseline(IEnumerable<string> issueIds)
+    {
+        KnownSentryIssues = [.. issueIds];
+        SentryBaselineTaken = true;
+        Save();
+    }
+
     public void MuteFinding(string id, double magnitude)
     {
         MutedFindings[id] = magnitude;
@@ -342,6 +363,8 @@ public sealed partial class AppSettings
             WatchedSentryProjects = WatchedSentryProjects,
             MutedSentryIssues = MutedSentryIssues,
             FlaggedSentryIssues = FlaggedSentryIssues,
+            KnownSentryIssues = KnownSentryIssues,
+            SentryBaselineTaken = SentryBaselineTaken,
             MutedFindings = MutedFindings,
             FlaggedFindings = FlaggedFindings,
             AppInsightsPollIntervalMinutes = AppInsightsPollIntervalMinutes,
@@ -387,6 +410,8 @@ public sealed partial class AppSettings
                 WatchedSentryProjects = dto.WatchedSentryProjects ?? [],
                 MutedSentryIssues = dto.MutedSentryIssues ?? [],
                 FlaggedSentryIssues = dto.FlaggedSentryIssues ?? [],
+                KnownSentryIssues = dto.KnownSentryIssues ?? [],
+                SentryBaselineTaken = dto.SentryBaselineTaken,
                 MutedFindings = dto.MutedFindings ?? [],
                 FlaggedFindings = dto.FlaggedFindings ?? [],
                 AppInsightsPollIntervalMinutes =
@@ -424,6 +449,8 @@ public sealed partial class AppSettings
         public List<string>? WatchedSentryProjects { get; set; }
         public Dictionary<string, SentryAcknowledgement>? MutedSentryIssues { get; set; }
         public Dictionary<string, string>? FlaggedSentryIssues { get; set; }
+        public List<string>? KnownSentryIssues { get; set; }
+        public bool SentryBaselineTaken { get; set; }
         public Dictionary<string, double>? MutedFindings { get; set; }
         public Dictionary<string, string>? FlaggedFindings { get; set; }
         public int AppInsightsPollIntervalMinutes { get; set; } = 15;

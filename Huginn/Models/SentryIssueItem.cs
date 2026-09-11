@@ -79,13 +79,54 @@ public sealed partial class SentryIssueItem : ObservableObject
 
     public bool HasRelease => !string.IsNullOrEmpty(ReleaseSummary);
 
+    /// <summary>Events per bucket over the stats window, oldest first.</summary>
+    public IReadOnlyList<double> EventSeries { get; init; } = [];
+
+    /// <summary>How long one entry in <see cref="EventSeries"/> covers.</summary>
+    public int SeriesBucketMinutes { get; init; }
+
+    /// <summary>Sparkline of the event counts, as block characters.</summary>
+    public string Spark => Trend.Spark(EventSeries);
+
+    /// <summary>The shape in a phrase: "constant", "one burst 3h ago", "easing off".</summary>
+    public string TrendVerdict => Trend.DescribeCounts(EventSeries, SeriesBucketMinutes);
+
+    /// <summary>
+    /// Only once there is enough volume to say something. A series of one event renders as a flat
+    /// line with a single blip, which reads as a stray underline rather than as a shape.
+    /// </summary>
+    public bool HasTrend => TrendVerdict.Length > 0;
+
     /// <summary>
     /// Huginn raised this and the user has not dismissed it, so it stays at the top of the list.
     /// </summary>
     public bool IsFlagged { get; set; }
 
-    /// <summary>Why it was raised: "new", "regressed" or "worse". Empty when not flagged.</summary>
+    /// <summary>Why it was raised: "new", "regressed", "worse" or "widespread".</summary>
     public string FlagReason { get; set; } = "";
+
+    /// <summary>
+    /// Reaching enough people to matter on its own. Current state rather than a stored alert, so
+    /// it is recomputed every poll and goes away again when the issue quietens.
+    /// </summary>
+    public bool IsWidespread { get; set; }
+
+    /// <summary>
+    /// Dismiss clears a stored alert. Reach is recomputed from the next poll, so there is nothing
+    /// for it to clear and the button would do nothing.
+    /// </summary>
+    public bool CanDismiss { get; private set; }
+
+    /// <summary>
+    /// Settles the raised state from the stored alert and from live reach. Both the poll and a
+    /// repaint after a mute go through here, so they cannot disagree about what is raised.
+    /// </summary>
+    public void ApplyRaise(bool alerted, string alertReason)
+    {
+        CanDismiss = alerted;
+        IsFlagged = alerted || IsWidespread;
+        FlagReason = alerted ? alertReason : IsWidespread ? "widespread" : "";
+    }
 
     public bool HasFlagReason => FlagReason.Length > 0;
 

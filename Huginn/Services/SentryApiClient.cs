@@ -134,10 +134,49 @@ public sealed class SentryApiClient : IDisposable
                 LastSeen = Time(issue, "lastSeen"),
                 Permalink = Text(issue, "permalink"),
                 IsRegression = string.Equals(Text(issue, "substatus"), "regressed", StringComparison.OrdinalIgnoreCase),
+                EventSeries = Series(issue, statsPeriod, out int bucketMinutes),
+                SeriesBucketMinutes = bucketMinutes,
             });
         }
 
         return issues;
+    }
+
+    /// <summary>
+    /// Event counts per bucket, which the list response already carries under the stats period
+    /// that was asked for. No extra request, so every issue gets one.
+    /// </summary>
+    /// <param name="bucketMinutes">
+    /// Taken from the gap between the first two timestamps rather than assumed, so it stays right
+    /// if the stats period changes.
+    /// </param>
+    private static IReadOnlyList<double> Series(JsonElement issue, string statsPeriod, out int bucketMinutes)
+    {
+        bucketMinutes = 0;
+
+        if (!issue.TryGetProperty("stats", out JsonElement stats)
+            || !stats.TryGetProperty(statsPeriod, out JsonElement points)
+            || points.ValueKind != JsonValueKind.Array)
+            return [];
+
+        List<double> counts = [];
+        long firstAt = 0, secondAt = 0;
+
+        foreach (JsonElement point in points.EnumerateArray())
+        {
+            // Each point is [unixSeconds, count].
+            if (point.ValueKind != JsonValueKind.Array || point.GetArrayLength() < 2) continue;
+
+            long at = point[0].TryGetInt64(out long seconds) ? seconds : 0;
+            if (counts.Count == 0) firstAt = at;
+            else if (counts.Count == 1) secondAt = at;
+
+            counts.Add(point[1].TryGetDouble(out double count) ? count : 0);
+        }
+
+        if (secondAt > firstAt) bucketMinutes = (int)((secondAt - firstAt) / 60);
+
+        return counts;
     }
 
     /// <summary>

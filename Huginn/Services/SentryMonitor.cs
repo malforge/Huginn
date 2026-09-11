@@ -13,7 +13,6 @@ namespace Huginn.Services;
 /// </summary>
 public sealed class SentryMonitor
 {
-    private readonly HashSet<string> _knownIssueIds = [];
     private readonly HashSet<string> _knownRegressionIds = [];
 
     /// <summary>Cached releases per issue, with the time they were read.</summary>
@@ -31,7 +30,16 @@ public sealed class SentryMonitor
     /// the most rate-limited thing to do. The set of versions an issue appears in barely moves.
     /// </summary>
     private static readonly TimeSpan ReleaseCacheLifetime = TimeSpan.FromHours(1);
-    private bool _hasBaseline;
+
+    /// <summary>Reach below this never raises an issue on its own, however quiet the day is.</summary>
+    private const int MinUsersToRaise = 5;
+
+    /// <summary>
+    /// Share of everyone hit in the window that makes a single issue worth raising by itself.
+    /// A share rather than a fixed count so the bar rises with the day: a busy morning raises
+    /// only what dominates it, and a quiet one raises nothing rather than promoting a stray crash.
+    /// </summary>
+    private const double ImpactShare = 0.05;
 
     public record SentrySnapshot(
         List<SentryIssueItem> Issues,
@@ -56,7 +64,7 @@ public sealed class SentryMonitor
             if (settings.HasOutgrownMute(issue.Id, issue.UserCount, issue.EventCount, issue.IsRegression))
             {
                 settings.UnmuteSentryIssue(issue.Id);
-                if (_hasBaseline) escalations.Add(issue);
+                if (settings.SentryBaselineTaken) escalations.Add(issue);
             }
 
             if (settings.MutedSentryIssues.TryGetValue(issue.Id, out var muted))
@@ -64,11 +72,13 @@ public sealed class SentryMonitor
 
         }
 
-        if (_hasBaseline)
+        HashSet<string> known = [.. settings.KnownSentryIssues];
+
+        if (settings.SentryBaselineTaken)
         {
             foreach (SentryIssueItem issue in issues)
             {
-                if (_knownIssueIds.Add(issue.Id))
+                if (!known.Contains(issue.Id))
                 {
                     // A muted issue cannot also be new, so no mute check is needed here.
                     newIssues.Add(issue);
@@ -83,12 +93,10 @@ public sealed class SentryMonitor
         else
         {
             foreach (SentryIssueItem issue in issues)
-            {
-                _knownIssueIds.Add(issue.Id);
                 if (issue.IsRegression) _knownRegressionIds.Add(issue.Id);
-            }
-            _hasBaseline = true;
         }
+
+        settings.SetSentryBaseline(issues.Select(i => i.Id));
 
         // Anything raised stays raised until the user dismisses it, so the flag is persisted
         // rather than held for the lifetime of the process.
@@ -98,10 +106,19 @@ public sealed class SentryMonitor
 
         settings.PruneSentryFlags([.. issues.Select(i => i.Id)]);
 
+        int threshold = ImpactThreshold(issues, settings);
+
         foreach (SentryIssueItem issue in issues)
         {
-            issue.IsFlagged = settings.IsSentryIssueFlagged(issue.Id);
-            issue.FlagReason = settings.GetSentryFlagReason(issue.Id);
+            // Reach is current state, so unlike the change-driven reasons it is recomputed every
+            // poll rather than pinned until dismissed. Pinning would let the list accrete issues
+            // that went quiet weeks ago. Muting is how the user silences one of these.
+            issue.IsWidespread = issue.UserCount >= threshold
+                                 && !settings.IsSentryIssueMuted(issue.Id);
+
+            issue.ApplyRaise(
+                settings.IsSentryIssueFlagged(issue.Id),
+                settings.GetSentryFlagReason(issue.Id));
         }
 
         // Outstanding alerts first, then whatever affects most people.
@@ -168,15 +185,26 @@ public sealed class SentryMonitor
         }
     }
 
+    /// <summary>
+    /// How many users an issue must reach before it is raised on reach alone. Muted issues are
+    /// left out of the total, so silencing the loudest crash does not drag the bar down with it.
+    /// </summary>
+    private static int ImpactThreshold(List<SentryIssueItem> issues, AppSettings settings)
+    {
+        int totalUsers = issues
+            .Where(i => !settings.IsSentryIssueMuted(i.Id))
+            .Sum(i => i.UserCount);
+
+        return Math.Max(MinUsersToRaise, (int)Math.Ceiling(totalUsers * ImpactShare));
+    }
+
     /// <summary>Pins an outstanding alert above anything that is merely large.</summary>
     private static int Rank(SentryIssueItem issue) => issue.IsFlagged ? 1 : 0;
 
     public void Reset()
     {
-        _knownIssueIds.Clear();
         _knownRegressionIds.Clear();
         _releases.Clear();
-        _hasBaseline = false;
     }
 
     public StatusParts GetStatusParts(SentrySnapshot snapshot)
