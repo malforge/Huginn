@@ -82,6 +82,26 @@ public class WinToastService : INotificationService
         }
     }
 
+    public void ShowSummary(string heading, string subject, string detail, string url)
+    {
+        try
+        {
+            ToastContentBuilder builder = new();
+
+            if (!string.IsNullOrWhiteSpace(url))
+                builder.AddArgument("action", "openSummary").AddArgument("url", url);
+
+            builder.AddText(heading)
+                   .AddText(subject)
+                   .AddText(detail)
+                   .Show();
+        }
+        catch
+        {
+            // Toast failures are non-critical
+        }
+    }
+
     public void ShowSentryIssue(string title, string project, string impact, string url, bool isRegression)
     {
         try

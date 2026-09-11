@@ -91,6 +91,7 @@ public static class PlatformFactory
         public void ShowBuildFailed(string pipelineName, string branch, string url) { }
         public void ShowSentryIssue(string title, string project, string impact, string url, bool isRegression) { }
         public void ShowServiceFinding(string subject, string resource, string detail) { }
+        public void ShowSummary(string heading, string subject, string detail, string url) { }
     }
 
     private sealed class FileCredentialStore : ICredentialStore

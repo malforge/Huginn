@@ -1398,16 +1398,14 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller = new PollingService(_settings);
 
         _poller.PollCompleted += OnPollCompleted;
-        _poller.NewPullRequestDetected += OnNewPullRequestDetected;
-        _poller.NewBuildFailureDetected += OnNewBuildFailureDetected;
-        _poller.NewSentryIssueDetected += OnNewSentryIssueDetected;
-        _poller.SentryRegressionDetected += OnSentryRegressionDetected;
-        _poller.SentryEscalationDetected += OnSentryEscalationDetected;
+        _poller.NewPullRequestsDetected += OnNewPullRequestsDetected;
+        _poller.NewBuildFailuresDetected += OnNewBuildFailuresDetected;
+        _poller.SentryAlertsDetected += OnSentryAlertsDetected;
         _poller.SentryFailed += OnSentryFailed;
         _poller.SentryPolled += OnSentryPolled;
         _poller.AppInsightsPolled += OnAppInsightsPolled;
         _poller.AppInsightsFailed += OnAppInsightsFailed;
-        _poller.NewServiceFindingDetected += OnNewServiceFindingDetected;
+        _poller.NewServiceFindingsDetected += OnNewServiceFindingsDetected;
         _poller.StatusChanged += OnStatusChanged;
         _poller.ErrorOccurred += OnErrorOccurred;
 
@@ -1424,29 +1422,90 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnPollCompleted(PollResult result)
         => Dispatcher.UIThread.Post(() => HandlePollResult(result));
 
-    private void OnNewPullRequestDetected(PullRequestItem pr)
-        => Dispatcher.UIThread.Post(() => _notifications.ShowNewPullRequest(
-            pr.Title, pr.CreatedByName, pr.RepositoryName, pr.DevOpsUrl(_settings.GetWebBaseUrl())));
+    private void OnNewPullRequestsDetected(List<PullRequestItem> prs)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            if (prs.Count == 1)
+            {
+                PullRequestItem pr = prs[0];
+                _notifications.ShowNewPullRequest(
+                    pr.Title, pr.CreatedByName, pr.RepositoryName,
+                    pr.DevOpsUrl(_settings.GetWebBaseUrl()));
+                return;
+            }
 
-    private void OnNewBuildFailureDetected(BuildItem build)
-        => Dispatcher.UIThread.Post(() => _notifications.ShowBuildFailed(
-            build.DefinitionName, build.BranchShortName, build.WebUrl));
+            _notifications.ShowSummary(
+                "🛡️ PRs awaiting your review",
+                $"{prs.Count} new since the last check",
+                Listing(prs.Select(p => p.Title), prs.Count),
+                "");
+        });
 
-    private void OnNewSentryIssueDetected(SentryIssueItem issue)
-        => Dispatcher.UIThread.Post(() => _notifications.ShowSentryIssue(
-            issue.Title, issue.ProjectSlug, Detail(issue), issue.Permalink, isRegression: false));
+    private void OnNewBuildFailuresDetected(List<BuildItem> builds)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            if (builds.Count == 1)
+            {
+                BuildItem build = builds[0];
+                _notifications.ShowBuildFailed(
+                    build.DefinitionName, build.BranchShortName, build.WebUrl);
+                return;
+            }
 
-    private void OnSentryRegressionDetected(SentryIssueItem issue)
-        => Dispatcher.UIThread.Post(() => _notifications.ShowSentryIssue(
-            issue.Title, issue.ProjectSlug, Detail(issue), issue.Permalink, isRegression: true));
+            _notifications.ShowSummary(
+                "🔴 Builds failing",
+                $"{builds.Count} pipelines",
+                Listing(builds.Select(b => b.DefinitionName), builds.Count),
+                "");
+        });
+
+    private void OnSentryAlertsDetected(SentryAlerts alerts)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            if (alerts.Total == 1)
+            {
+                SentryIssueItem issue = alerts.All.First();
+                bool regressed = alerts.New.Count == 0;
+                _notifications.ShowSentryIssue(
+                    issue.Title, issue.ProjectSlug,
+                    alerts.Escalations.Count == 1 ? $"grown to {Detail(issue)}" : Detail(issue),
+                    issue.Permalink, regressed);
+                return;
+            }
+
+            // The worst one by reach is named, because a bare count says nothing about whether
+            // this is worth interrupting what you are doing.
+            SentryIssueItem worst = alerts.All.OrderByDescending(i => i.UserCount).First();
+
+            _notifications.ShowSummary(
+                "🐛 Sentry",
+                $"{alerts.Total} issues need attention",
+                $"{Counts(alerts)} · worst: {worst.Title} ({worst.Impact})",
+                worst.Permalink);
+        });
 
     /// <summary>Reach plus the version it happened in, which is where triage starts.</summary>
     private static string Detail(SentryIssueItem issue) =>
         issue.HasRelease ? $"{issue.Impact} · {issue.ReleaseSummary}" : issue.Impact;
 
-    private void OnSentryEscalationDetected(SentryIssueItem issue)
-        => Dispatcher.UIThread.Post(() => _notifications.ShowSentryIssue(
-            issue.Title, issue.ProjectSlug, $"grown to {Detail(issue)}", issue.Permalink, isRegression: true));
+    /// <summary>Why the issues were raised, e.g. "3 new · 1 regressed".</summary>
+    private static string Counts(SentryAlerts alerts)
+    {
+        List<string> parts = [];
+        if (alerts.New.Count > 0) parts.Add($"{alerts.New.Count} new");
+        if (alerts.Regressions.Count > 0) parts.Add($"{alerts.Regressions.Count} regressed");
+        if (alerts.Escalations.Count > 0) parts.Add($"{alerts.Escalations.Count} worse");
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>Names the first couple and counts the rest, so a summary still says what it is about.</summary>
+    private static string Listing(IEnumerable<string> names, int total)
+    {
+        List<string> first = [.. names.Take(2)];
+        return total > first.Count
+            ? $"{string.Join(" · ", first)} · and {total - first.Count} more"
+            : string.Join(" · ", first);
+    }
 
     private void OnSentryFailed(string msg)
         => Dispatcher.UIThread.Post(() => SentryStatus.Set(
@@ -1495,9 +1554,25 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 : ConnectionState.Error,
             msg));
 
-    private void OnNewServiceFindingDetected(ServiceFinding finding)
-        => Dispatcher.UIThread.Post(() => _notifications.ShowServiceFinding(
-            finding.Subject, finding.ResourceName, finding.Detail));
+    private void OnNewServiceFindingsDetected(List<ServiceFinding> findings)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            if (findings.Count == 1)
+            {
+                ServiceFinding finding = findings[0];
+                _notifications.ShowServiceFinding(
+                    finding.Subject, finding.ResourceName, finding.Detail);
+                return;
+            }
+
+            List<string> resources = [.. findings.Select(f => f.ResourceName).Distinct()];
+
+            _notifications.ShowSummary(
+                "📉 Service problems",
+                $"{findings.Count} new on {(resources.Count == 1 ? resources[0] : $"{resources.Count} resources")}",
+                DescribeKinds(findings),
+                "");
+        });
 
     private void OnStatusChanged(string msg)
         => Dispatcher.UIThread.Post(() => StatusText = msg);
@@ -1538,16 +1613,14 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (_poller == null) return;
         _poller.PollCompleted -= OnPollCompleted;
-        _poller.NewPullRequestDetected -= OnNewPullRequestDetected;
-        _poller.NewBuildFailureDetected -= OnNewBuildFailureDetected;
-        _poller.NewSentryIssueDetected -= OnNewSentryIssueDetected;
-        _poller.SentryRegressionDetected -= OnSentryRegressionDetected;
-        _poller.SentryEscalationDetected -= OnSentryEscalationDetected;
+        _poller.NewPullRequestsDetected -= OnNewPullRequestsDetected;
+        _poller.NewBuildFailuresDetected -= OnNewBuildFailuresDetected;
+        _poller.SentryAlertsDetected -= OnSentryAlertsDetected;
         _poller.SentryFailed -= OnSentryFailed;
         _poller.SentryPolled -= OnSentryPolled;
         _poller.AppInsightsPolled -= OnAppInsightsPolled;
         _poller.AppInsightsFailed -= OnAppInsightsFailed;
-        _poller.NewServiceFindingDetected -= OnNewServiceFindingDetected;
+        _poller.NewServiceFindingsDetected -= OnNewServiceFindingsDetected;
         _poller.StatusChanged -= OnStatusChanged;
         _poller.ErrorOccurred -= OnErrorOccurred;
     }

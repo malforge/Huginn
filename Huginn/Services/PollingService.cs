@@ -36,11 +36,11 @@ public sealed class PollingService : IDisposable
     private DateTimeOffset _appInsightsLastPolled = DateTimeOffset.MinValue;
 
     public event Action<PollResult>? PollCompleted;
-    public event Action<PullRequestItem>? NewPullRequestDetected;
-    public event Action<BuildItem>? NewBuildFailureDetected;
-    public event Action<SentryIssueItem>? NewSentryIssueDetected;
-    public event Action<SentryIssueItem>? SentryRegressionDetected;
-    public event Action<SentryIssueItem>? SentryEscalationDetected;
+    // Batches rather than single items, so one poll produces one announcement per source
+    // however much it found.
+    public event Action<List<PullRequestItem>>? NewPullRequestsDetected;
+    public event Action<List<BuildItem>>? NewBuildFailuresDetected;
+    public event Action<SentryAlerts>? SentryAlertsDetected;
     public event Action<string>? StatusChanged;
     public event Action<string>? ErrorOccurred;
 
@@ -134,7 +134,7 @@ public sealed class PollingService : IDisposable
 
     public event Action<string>? SentryFailed;
     public event Action<List<SentryIssueItem>>? SentryPolled;
-    public event Action<ServiceFinding>? NewServiceFindingDetected;
+    public event Action<List<ServiceFinding>>? NewServiceFindingsDetected;
     public event Action<string>? AppInsightsFailed;
     public event Action<List<ServiceFinding>>? AppInsightsPolled;
 
@@ -207,8 +207,8 @@ public sealed class PollingService : IDisposable
             AppInsightsPolled?.Invoke(snapshot.Findings);
             _appInsightsLastPolled = DateTimeOffset.UtcNow;
 
-            foreach (var finding in snapshot.NewFindings)
-                NewServiceFindingDetected?.Invoke(finding);
+            if (snapshot.NewFindings.Count > 0)
+                NewServiceFindingsDetected?.Invoke(snapshot.NewFindings);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -237,11 +237,11 @@ public sealed class PollingService : IDisposable
             // status line (would overwrite the error banner). The loop terminates after.
             if (_authFailed) return;
 
-            // Raise new-item events
-            foreach (var pr in prSnap.NewReviewPrs)
-                NewPullRequestDetected?.Invoke(pr);
-            foreach (var build in buildSnap.NewFailures)
-                NewBuildFailureDetected?.Invoke(build);
+            // Raise new-item events, one per source rather than one per item
+            if (prSnap.NewReviewPrs.Count > 0)
+                NewPullRequestsDetected?.Invoke(prSnap.NewReviewPrs);
+            if (buildSnap.NewFailures.Count > 0)
+                NewBuildFailuresDetected?.Invoke(buildSnap.NewFailures);
 
             PollCompleted?.Invoke(new PollResult
             {
@@ -298,12 +298,8 @@ public sealed class PollingService : IDisposable
             // costs a throttled request, and an issue without its version is still worth seeing.
             SentryPolled?.Invoke(snapshot.Issues);
 
-            foreach (var issue in snapshot.NewIssues)
-                NewSentryIssueDetected?.Invoke(issue);
-            foreach (var issue in snapshot.Regressions)
-                SentryRegressionDetected?.Invoke(issue);
-            foreach (var issue in snapshot.Escalations)
-                SentryEscalationDetected?.Invoke(issue);
+            SentryAlerts alerts = new(snapshot.NewIssues, snapshot.Regressions, snapshot.Escalations);
+            if (alerts.Total > 0) SentryAlertsDetected?.Invoke(alerts);
 
             await _sentryMonitor.EnrichReleasesAsync(
                 _sentry, _settings.SentryOrganization, snapshot.Issues, ct);

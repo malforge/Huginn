@@ -50,6 +50,9 @@ public class MacNotificationService : INotificationService
     public void ShowServiceFinding(string subject, string resource, string detail)
         => Notify("📉 Service problem", subject, $"{resource} · {detail}");
 
+    public void ShowSummary(string heading, string subject, string detail, string url)
+        => Notify(heading, subject, detail);
+
     public void ShowSentryIssue(string title, string project, string impact, string url, bool isRegression)
     {
         Notify(

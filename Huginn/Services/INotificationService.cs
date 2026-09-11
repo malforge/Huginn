@@ -19,4 +19,11 @@ public interface INotificationService
 
     /// <summary>A newly detected problem on a monitored service.</summary>
     void ShowServiceFinding(string subject, string resource, string detail);
+
+    /// <summary>
+    /// Everything one poll found, as a single notification. A poll that turns up ten problems
+    /// must not fire ten of these: a storm reads exactly like a real emergency, so neither
+    /// gets read.
+    /// </summary>
+    void ShowSummary(string heading, string subject, string detail, string url);
 }
