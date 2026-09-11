@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Huginn.Models;
@@ -70,6 +71,12 @@ public sealed partial class ServiceFinding : ObservableObject
 
     /// <summary>Sparkline of this measurement over the window, as block characters.</summary>
     public string Spark { get; set; } = "";
+
+    /// <summary>
+    /// The measurement behind <see cref="Spark"/>, oldest first. Kept because a reader that is
+    /// not a person wants the numbers rather than the picture.
+    /// </summary>
+    public IReadOnlyList<double> SeriesValues { get; set; } = [];
 
     /// <summary>Whether it is new, as a phrase: "stepped up 35m ago", "steady all window".</summary>
     public string TrendVerdict { get; set; } = "";

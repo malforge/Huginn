@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
@@ -13,6 +14,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Huginn.Models;
 using Huginn.Services;
+using Huginn.Services.Agent;
 using Huginn.Services.Updates;
 
 namespace Huginn.ViewModels;
@@ -179,6 +181,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// <summary>Application Insights publishes on its own cadence, so it keeps its own result.</summary>
     private List<ServiceFinding> _lastFindings = [];
 
+    /// <summary>Watches for an agent asking Huginn to poll now.</summary>
+    private FileSystemWatcher? _refreshRequests;
+
     public MainWindowViewModel(AppSettings settings, INotificationService notifications)
     {
         _settings = settings;
@@ -199,6 +204,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         UpdateService.Instance.PropertyChanged += OnUpdateServicePropertyChanged;
         UpdateService.Instance.StartPolling();
+
+        WatchForRefreshRequests();
 
         Connections.Add(AdoStatus);
         Connections.Add(SentryStatus);
@@ -696,6 +703,47 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         AdoPaneStatus = PaneLine(AdoStatus, _adoLastPolled, true);
         SentryPaneStatus = PaneLine(SentryStatus, _sentryLastPolled, CrashActions.Count > 0);
         ServicePaneStatus = PaneLine(AppInsightsStatus, _serviceLastPolled, ServiceActions.Count > 0);
+
+        ExportForAgents();
+    }
+
+    /// <summary>
+    /// Publishes what the dashboard is showing, for readers that are not looking at it. Written
+    /// on the same beat as the pane statuses, so it is never staler than the window.
+    /// </summary>
+    private void ExportForAgents()
+    {
+        AgentSource Source(ConnectionStatus status, DateTimeOffset? polled) => new()
+        {
+            Name = status.Title,
+            State = status.State.ToString(),
+            Message = status.Message,
+            LastPolled = polled == default ? null : polled,
+            NeedsAttention = status.NeedsAttention,
+        };
+
+        SnapshotStore.Write(SnapshotBuilder.Build(
+            [
+                Source(AdoStatus, _adoLastPolled),
+                Source(SentryStatus, _sentryLastPolled),
+                Source(AppInsightsStatus, _serviceLastPolled),
+            ],
+            [
+                new("failed-validation", FailedValidationPrs),
+                new("missing-reviewers", UnstaffedPrs),
+                new("autocomplete-off", AutoCompleteOffPrs),
+                new("awaiting-review", ReadyToReviewPrs),
+                new("mine", MyActivePrs),
+                new("acknowledged", AcknowledgedPrs),
+            ],
+            [
+                new("failed", FailedBuilds),
+                new("retrying", RetryingBuilds),
+                new("acknowledged", AcknowledgedBuilds),
+            ],
+            _lastSentryIssues,
+            _lastFindings,
+            _settings.GetWebBaseUrl()));
     }
 
     private void RebuildServiceGroups()
@@ -1631,5 +1679,43 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         UnsubscribePollerEvents();
         _poller?.Dispose();
         _badge?.Dispose();
+        _refreshRequests?.Dispose();
     }
+
+    /// <summary>
+    /// Watches for an agent asking for a poll. Without this a reader that finds the snapshot
+    /// stale has no way to do anything about it but wait for the next scheduled poll.
+    /// </summary>
+    private void WatchForRefreshRequests()
+    {
+        try
+        {
+            Directory.CreateDirectory(AppSettings.SettingsDir);
+
+            _refreshRequests = new FileSystemWatcher(AppSettings.SettingsDir)
+            {
+                Filter = System.IO.Path.GetFileName(SnapshotStore.RefreshRequestPath),
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
+                EnableRaisingEvents = true,
+            };
+
+            _refreshRequests.Created += OnRefreshRequested;
+            _refreshRequests.Changed += OnRefreshRequested;
+        }
+        catch (Exception ex)
+        {
+            // Monitoring still works without it; only the agent-triggered refresh is lost.
+            Log.Warn($"Could not watch for agent refresh requests: {ex.Message}");
+        }
+    }
+
+    private void OnRefreshRequested(object? sender, FileSystemEventArgs e)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            // Consume it first: a write that arrives while the poll runs should ask again, and a
+            // file left behind would re-trigger on every restart.
+            try { File.Delete(SnapshotStore.RefreshRequestPath); } catch { }
+
+            if (!IsRefreshing) RefreshCommand.Execute(null);
+        });
 }

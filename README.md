@@ -90,6 +90,39 @@ This produces a self-contained, trimmed single-file executable under
 above — they bundle Velopack so auto-updates work; the `deploy.ps1` output
 is for local development only.
 
+## Asking Huginn from an agent
+
+Huginn publishes what the dashboard is showing to `state.json`, beside its settings, after every
+poll. It can also serve that over [MCP](https://modelcontextprotocol.io), so a coding agent can ask
+what is currently broken instead of being told.
+
+Register it once:
+
+```powershell
+claude mcp add huginn -- "$env:LOCALAPPDATA\Huginn\current\Huginn.exe" --mcp
+```
+
+The tools:
+
+| Tool | Answers |
+|---|---|
+| `huginn_status` | Everything needing attention right now. Start here. |
+| `huginn_crashes` | Sentry issues, worst reach first. |
+| `huginn_services` | Application Insights findings, most severe first. |
+| `huginn_pull_requests` | The review queues. |
+| `huginn_builds` | Failing and retrying builds. |
+| `huginn_refresh` | Asks a running Huginn to poll now, and waits for the result. |
+
+Every answer opens with how old the snapshot is, and says so plainly once it is stale, because an
+empty list from a source that stopped answering looks exactly like nothing being wrong.
+
+Reading needs no credentials and opens no port: `--mcp` only reads the file the running app wrote,
+and exits when the agent disconnects. `huginn_refresh` is the one thing that talks back, by leaving
+a request the running app picks up. If Huginn is not running, it says so rather than pretending.
+
+Set `HUGINN_PROFILE` to keep a second install's settings, credentials and snapshot separate from
+the first.
+
 ## License
 
 [MIT](LICENSE)
