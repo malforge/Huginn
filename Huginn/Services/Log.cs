@@ -17,14 +17,31 @@ public static class Log
     {
         if (_writer != null) return;
         Directory.CreateDirectory(LogDir);
-        // FileShare.ReadWrite so a second instance still logs instead of silently
-        // losing every line to a sharing violation.
-        _writer = new StreamWriter(
-            new FileStream(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
-        {
-            AutoFlush = true,
-        };
+
+        // FileShare.ReadWrite lets a second instance share the file, but only when the first one
+        // opened it that way too. An older build holding it exclusively would otherwise leave this
+        // process with no log at all, so fall back to a file of its own.
+        _writer = TryOpen(LogPath) ?? TryOpen(FallbackLogPath());
     }
+
+    private static StreamWriter? TryOpen(string path)
+    {
+        try
+        {
+            return new StreamWriter(
+                new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+            {
+                AutoFlush = true,
+            };
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    private static string FallbackLogPath() =>
+        Path.Combine(LogDir, $"Huginn.{Environment.ProcessId}.log");
 
     private static void Write(string level, string message)
     {
