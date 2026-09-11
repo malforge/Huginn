@@ -52,6 +52,14 @@ public sealed partial class ServiceFinding : ObservableObject
     /// </summary>
     public string Id => $"{AppId}|{Kind}|{Subject}";
 
+    /// <summary>Sparkline of this measurement over the window, as block characters.</summary>
+    public string Spark { get; set; } = "";
+
+    /// <summary>Whether it is new, as a phrase: "stepped up 35m ago", "steady all window".</summary>
+    public string TrendVerdict { get; set; } = "";
+
+    public bool HasTrend => Spark.Length > 0;
+
     /// <summary>Raised and not yet dismissed, so it stays at the top of its section.</summary>
     public bool IsFlagged { get; set; }
 

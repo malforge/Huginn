@@ -192,6 +192,8 @@ public sealed class AppInsightsMonitor
             });
         }
 
+        await AddTrendsAsync(client, component, findings, windowMinutes, ct);
+
         // Silence is the failure a threshold never catches, so it gets its own rule.
         if (traffic == 0)
         {
@@ -208,6 +210,102 @@ public sealed class AppInsightsMonitor
         }
 
         return findings;
+    }
+
+    /// <summary>Buckets the window into roughly twenty points, never finer than a minute.</summary>
+    private static int BucketMinutes(int windowMinutes) => Math.Max(1, windowMinutes / 20);
+
+    /// <summary>
+    /// Attaches a series to each finding so the card can say whether it is new. Two queries per
+    /// resource rather than one per finding: the series come back grouped, and a resource with
+    /// twenty findings would otherwise cost twenty round trips.
+    /// </summary>
+    private static async Task AddTrendsAsync(
+        AppInsightsApiClient client,
+        AppInsightsComponent component,
+        List<ServiceFinding> findings,
+        int windowMinutes,
+        CancellationToken ct)
+    {
+        if (findings.Count == 0) return;
+
+        int bucket = BucketMinutes(windowMinutes);
+        string window = $"{windowMinutes}m";
+
+        Dictionary<string, List<double>> latency = [];
+        Dictionary<string, List<double>> failureRate = [];
+        Dictionary<string, List<double>> dependency = [];
+
+        if (findings.Any(f => f.Kind is FindingKind.Latency or FindingKind.FailureRate))
+        {
+            QueryTable series = await client.QueryAsync(component.AppId, $"""
+                requests
+                | where timestamp > ago({window})
+                | where toint(resultCode) != 404
+                | summarize p95 = round(percentile(duration, 95)),
+                            failed = sumif(itemCount, success == false),
+                            total = sum(itemCount)
+                          by name, bin(timestamp, {bucket}m)
+                | order by timestamp asc
+                """, ct);
+
+            int nameAt = series.IndexOf("name");
+            int p95At = series.IndexOf("p95");
+            int failedAt = series.IndexOf("failed");
+            int totalAt = series.IndexOf("total");
+
+            foreach (IReadOnlyList<string> row in series.Rows)
+            {
+                string name = Text(row, nameAt);
+                long total = Number(row, totalAt);
+
+                Append(latency, name, Number(row, p95At));
+                Append(failureRate, name, total == 0 ? 0 : (double)Number(row, failedAt) / total * 100);
+            }
+        }
+
+        if (findings.Any(f => f.Kind == FindingKind.Dependency))
+        {
+            QueryTable series = await client.QueryAsync(component.AppId, $"""
+                dependencies
+                | where timestamp > ago({window}) and success == false
+                | summarize failed = sum(itemCount) by target, bin(timestamp, {bucket}m)
+                | order by timestamp asc
+                """, ct);
+
+            int targetAt = series.IndexOf("target");
+            int failedAt = series.IndexOf("failed");
+
+            foreach (IReadOnlyList<string> row in series.Rows)
+                Append(dependency, Text(row, targetAt), Number(row, failedAt));
+        }
+
+        foreach (ServiceFinding finding in findings)
+        {
+            List<double>? points = finding.Kind switch
+            {
+                FindingKind.Latency => Lookup(latency, finding.Subject),
+                FindingKind.FailureRate => Lookup(failureRate, finding.Subject),
+                FindingKind.Dependency => dependency.FirstOrDefault(
+                    d => finding.Subject.EndsWith(d.Key, StringComparison.OrdinalIgnoreCase)).Value,
+                _ => null,
+            };
+
+            if (points is null || points.Count < 2) continue;
+
+            finding.Spark = Trend.Spark(points);
+            finding.TrendVerdict = Trend.Describe(points, bucket);
+        }
+
+        static void Append(Dictionary<string, List<double>> into, string key, double value)
+        {
+            if (key.Length == 0) return;
+            if (!into.TryGetValue(key, out List<double>? list)) into[key] = list = [];
+            list.Add(value);
+        }
+
+        static List<double>? Lookup(Dictionary<string, List<double>> from, string key) =>
+            from.TryGetValue(key, out List<double>? list) ? list : null;
     }
 
     /// <summary>Reads the window back as a person would say it.</summary>
