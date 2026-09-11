@@ -197,7 +197,7 @@ public sealed class AppInsightsMonitor
                 AppId = component.AppId,
                 ResourceId = component.ResourceId,
                 Subject = $"{Text(row, typeAt)} {target}".Trim(),
-                Detail = $"{failed:N0} failures, code {Text(row, codeAt)}",
+                Detail = $"{failed:N0} failures{Codes(Text(row, codeAt))}",
                 Magnitude = failed,
             });
         }
@@ -313,6 +313,7 @@ public sealed class AppInsightsMonitor
             if (points is null || points.Count < 2) continue;
 
             finding.Spark = Trend.Spark(points);
+            finding.SeriesValues = points;
             finding.TrendVerdict = Trend.Describe(points, bucket);
         }
 
