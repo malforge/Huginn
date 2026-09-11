@@ -75,7 +75,7 @@ public partial class MainWindow : Window
         if (_wasDeactivated && DataContext is MainWindowViewModel vm && vm.IsConnected)
         {
             _wasDeactivated = false;
-            vm.RefreshCommand.Execute(null);
+            _ = vm.RefreshOnFocusAsync();
         }
     }
 

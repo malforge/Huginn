@@ -30,6 +30,11 @@ public sealed class PollingService : IDisposable
     private readonly SemaphoreSlim _sentryLock = new(1, 1);
     private readonly SemaphoreSlim _appInsightsLock = new(1, 1);
 
+    // When each source last finished, so a refresh that was not asked for explicitly can leave
+    // the expensive ones alone.
+    private DateTimeOffset _sentryLastPolled = DateTimeOffset.MinValue;
+    private DateTimeOffset _appInsightsLastPolled = DateTimeOffset.MinValue;
+
     public event Action<PollResult>? PollCompleted;
     public event Action<PullRequestItem>? NewPullRequestDetected;
     public event Action<BuildItem>? NewBuildFailureDetected;
@@ -133,9 +138,30 @@ public sealed class PollingService : IDisposable
     public event Action<string>? AppInsightsFailed;
     public event Action<List<ServiceFinding>>? AppInsightsPolled;
 
-    /// <summary>Refreshes every source at once, for the Refresh button.</summary>
-    public Task PollNowAsync(CancellationToken ct = default) =>
-        Task.WhenAll(PollAzureDevOpsOnceAsync(ct), PollSentryOnceAsync(ct), PollAppInsightsOnceAsync(ct));
+    /// <summary>Refreshes every source, for the Refresh button.</summary>
+    public Task PollNowAsync(CancellationToken ct = default) => PollNowAsync(force: true, ct);
+
+    /// <summary>
+    /// Refreshes what is worth refreshing. Azure DevOps always, because it is cheap and pull
+    /// requests genuinely move minute to minute. Sentry and Application Insights only when their
+    /// own interval has elapsed: their windows are measured in hours, so re-querying them because
+    /// a window regained focus costs a lot and tells you nothing new.
+    /// </summary>
+    public Task PollNowAsync(bool force, CancellationToken ct = default)
+    {
+        List<Task> polls = [PollAzureDevOpsOnceAsync(ct)];
+
+        if (force || Due(_sentryLastPolled, _settings.SentryPollIntervalMinutes))
+            polls.Add(PollSentryOnceAsync(ct));
+
+        if (force || Due(_appInsightsLastPolled, _settings.AppInsightsPollIntervalMinutes))
+            polls.Add(PollAppInsightsOnceAsync(ct));
+
+        return Task.WhenAll(polls);
+    }
+
+    private static bool Due(DateTimeOffset last, int intervalMinutes) =>
+        DateTimeOffset.UtcNow - last >= TimeSpan.FromMinutes(Math.Max(1, intervalMinutes));
 
     /// <summary>
     /// Examines the watched Application Insights resources. Like Sentry, it reports its own
@@ -179,6 +205,8 @@ public sealed class PollingService : IDisposable
             var snapshot = await _appInsightsMonitor.PollAsync(client, components, _settings, ct);
 
             AppInsightsPolled?.Invoke(snapshot.Findings);
+            _appInsightsLastPolled = DateTimeOffset.UtcNow;
+
             foreach (var finding in snapshot.NewFindings)
                 NewServiceFindingDetected?.Invoke(finding);
         }
@@ -281,6 +309,7 @@ public sealed class PollingService : IDisposable
                 _sentry, _settings.SentryOrganization, snapshot.Issues, ct);
 
             SentryPolled?.Invoke(snapshot.Issues);
+            _sentryLastPolled = DateTimeOffset.UtcNow;
             return snapshot;
         }
         catch (OperationCanceledException)

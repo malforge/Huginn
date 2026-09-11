@@ -1169,13 +1169,21 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private async Task RefreshAsync()
+    private Task RefreshAsync() => RefreshAsync(force: true);
+
+    /// <summary>
+    /// Refresh on regaining focus, which must not re-query the expensive sources just because
+    /// the user alt-tabbed back.
+    /// </summary>
+    public Task RefreshOnFocusAsync() => RefreshAsync(force: false);
+
+    private async Task RefreshAsync(bool force)
     {
         if (_poller == null || !IsConnected) return;
         IsRefreshing = true;
         try
         {
-            await _poller.PollNowAsync();
+            await _poller.PollNowAsync(force);
         }
         finally
         {
