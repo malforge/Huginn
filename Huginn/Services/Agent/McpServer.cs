@@ -88,8 +88,12 @@ public static class McpServer
         };
     }
 
+    /// <summary>
+    /// Built through the constructor rather than a collection expression. The latter resolves to
+    /// the generic <c>JsonArray.Add</c>, which is not trim safe and warns in a published build.
+    /// </summary>
     private static JsonArray Tools() =>
-    [
+        new(
         Tool("huginn_status",
             "What Huginn currently says needs attention: source health, raised crashes, service "
             + "findings and the pull request queues. Start here.",
@@ -131,8 +135,7 @@ public static class McpServer
             new JsonObject
             {
                 ["waitSeconds"] = Prop("integer", "How long to wait for Huginn. Default 30."),
-            }),
-    ];
+            }));
 
     private static JsonObject Tool(string name, string description, JsonObject properties) => new()
     {
