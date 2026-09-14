@@ -21,6 +21,7 @@ public static class SnapshotBuilder
         IEnumerable<BuildQueue> buildQueues,
         IEnumerable<SentryIssueItem> crashes,
         IEnumerable<ServiceFinding> findings,
+        IEnumerable<IgnoredSubject> suppressed,
         string webBaseUrl) => new()
         {
             GeneratedAt = DateTimeOffset.UtcNow,
@@ -77,6 +78,16 @@ public static class SnapshotBuilder
                     SeriesBucketMinutes = c.SeriesBucketMinutes,
                     Trend = c.TrendVerdict,
                     Url = c.Permalink,
+                }),
+            ],
+            Suppressed =
+            [
+                .. suppressed.Select(i => new AgentSuppressed
+                {
+                    Subject = i.Subject,
+                    Resource = i.Resource,
+                    Reason = i.Pattern,
+                    Calls = i.Calls,
                 }),
             ],
             Services =

@@ -24,4 +24,10 @@ public sealed class AgentSnapshot
     public List<AgentCrash> Crashes { get; set; } = [];
 
     public List<AgentFinding> Services { get; set; } = [];
+
+    /// <summary>
+    /// What the rules held back. Published so a reader can tell "nothing is wrong" apart from
+    /// "something was filtered", which is the distinction a monitor must never blur.
+    /// </summary>
+    public List<AgentSuppressed> Suppressed { get; set; } = [];
 }
