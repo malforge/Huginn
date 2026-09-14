@@ -206,6 +206,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         UpdateService.Instance.StartPolling();
 
         WatchForRefreshRequests();
+        _ = RefreshAgentRegistrationAsync();
 
         Connections.Add(AdoStatus);
         Connections.Add(SentryStatus);
@@ -1253,6 +1254,92 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         catch
         {
             // Ignore browser launch failures
+        }
+    }
+
+    /// <summary>Where this Huginn is, which is what any MCP client has to be pointed at.</summary>
+    public string AgentExecutablePath => ClaudeCodeRegistration.ExecutablePath;
+
+    /// <summary>The Claude Code one-liner, for anyone who would rather run it themselves.</summary>
+    public string AgentCliCommand => ClaudeCodeRegistration.CliCommand;
+
+    /// <summary>The same server as configuration, for a client that is not Claude Code.</summary>
+    public string AgentConfigJson => ClaudeCodeRegistration.ConfigJson;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AgentRegisterLabel))]
+    private bool _agentRegistered;
+
+    [ObservableProperty]
+    private bool _claudeCodeFound;
+
+    [ObservableProperty]
+    private bool _agentBusy;
+
+    [ObservableProperty]
+    private string _agentRegistrationStatus = "";
+
+    public string AgentRegisterLabel =>
+        AgentRegistered ? "Remove from Claude Code" : "Register with Claude Code";
+
+    /// <summary>
+    /// Reads the current state rather than assuming it. Someone may have registered or removed it
+    /// outside Huginn, and a button that lies about what it will do is worse than no button.
+    /// </summary>
+    private async Task RefreshAgentRegistrationAsync()
+    {
+        ClaudeCodeFound = ClaudeCodeRegistration.FindClaude() != null;
+
+        AgentRegistrationStatus = ClaudeCodeFound
+            ? "Checking…"
+            : "Claude Code was not found on this machine. The details below work for any MCP client.";
+
+        if (!ClaudeCodeFound) return;
+
+        AgentRegistered = await ClaudeCodeRegistration.IsRegisteredAsync();
+        AgentRegistrationStatus = AgentRegistered
+            ? "Registered. Agents can ask Huginn what is currently broken."
+            : "Not registered yet.";
+    }
+
+    [RelayCommand]
+    private async Task ToggleAgentRegistrationAsync()
+    {
+        if (AgentBusy) return;
+        AgentBusy = true;
+        try
+        {
+            (bool ok, string message) = AgentRegistered
+                ? await ClaudeCodeRegistration.UnregisterAsync()
+                : await ClaudeCodeRegistration.RegisterAsync();
+
+            AgentRegistrationStatus = message;
+            if (ok) AgentRegistered = !AgentRegistered;
+        }
+        finally
+        {
+            AgentBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private Task CopyAgentCommandAsync() => CopyTextAsync(AgentCliCommand);
+
+    [RelayCommand]
+    private Task CopyAgentConfigAsync() => CopyTextAsync(AgentConfigJson);
+
+    private static async Task CopyTextAsync(string text)
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+            && desktop.MainWindow?.Clipboard is { } clipboard)
+        {
+            try
+            {
+                var transfer = new DataTransfer();
+                transfer.Add(DataTransferItem.CreateText(text));
+                await clipboard.SetDataAsync(transfer);
+            }
+            catch { }
         }
     }
 

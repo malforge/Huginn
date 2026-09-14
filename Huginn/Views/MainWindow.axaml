@@ -378,6 +378,60 @@
 
                 <!-- ═══ Updates ═══ -->
                 <Separator Margin="0,12"/>
+                <TextBlock Text="Agents" FontSize="16" FontWeight="SemiBold"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Huginn can answer an AI coding agent asking what is currently broken, over MCP. It serves what the dashboard already shows, so this needs no extra sign-in and opens no network port."
+                           FontSize="11" Opacity="0.5" TextWrapping="Wrap" TextAlignment="Center"
+                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
+
+                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                    <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0"
+                               FontSize="12" Opacity="0.85" TextWrapping="Wrap"
+                               Text="{Binding AgentRegistrationStatus}"/>
+                    <Button Grid.Column="1" VerticalAlignment="Center"
+                            IsVisible="{Binding ClaudeCodeFound}"
+                            IsEnabled="{Binding !AgentBusy}"
+                            Command="{Binding ToggleAgentRegistrationCommand}"
+                            Content="{Binding AgentRegisterLabel}"
+                            ToolTip.Tip="Writes your Claude Code configuration, for your user rather than this folder."/>
+                </Grid>
+
+                <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                        CornerRadius="6" Padding="12" Margin="0,8,0,0">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Setting it up by hand" FontSize="12" FontWeight="SemiBold" Opacity="0.8"/>
+                        <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                                   Text="Everything an MCP client needs is below, for a different agent or when the button will not do."/>
+
+                        <TextBlock Text="Command" FontSize="11" Opacity="0.7"/>
+                        <SelectableTextBlock Text="{Binding AgentExecutablePath}" FontSize="11"
+                                             FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
+
+                        <TextBlock Text="Arguments" FontSize="11" Opacity="0.7"/>
+                        <SelectableTextBlock Text="--mcp" FontSize="11"
+                                             FontFamily="Consolas,Menlo,monospace"/>
+
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                            <TextBlock Grid.Column="0" Text="Claude Code, from a terminal"
+                                       FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="Copy" FontSize="11" Padding="8,2"
+                                    Command="{Binding CopyAgentCommandCommand}"/>
+                        </Grid>
+                        <SelectableTextBlock Text="{Binding AgentCliCommand}" FontSize="11"
+                                             FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
+
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                            <TextBlock Grid.Column="0" Text="Any other MCP client"
+                                       FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="Copy" FontSize="11" Padding="8,2"
+                                    Command="{Binding CopyAgentConfigCommand}"/>
+                        </Grid>
+                        <SelectableTextBlock Text="{Binding AgentConfigJson}" FontSize="11"
+                                             FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <Separator Margin="0,12"/>
                 <TextBlock Text="Updates" FontSize="16" FontWeight="SemiBold"
                            HorizontalAlignment="Center" Margin="0,0,0,8"/>
 

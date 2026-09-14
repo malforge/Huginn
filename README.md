@@ -96,10 +96,23 @@ Huginn publishes what the dashboard is showing to `state.json`, beside its setti
 poll. It can also serve that over [MCP](https://modelcontextprotocol.io), so a coding agent can ask
 what is currently broken instead of being told.
 
-Register it once:
+Open **Settings -> Agents** and press **Register with Claude Code**. That writes your own Claude
+configuration, for your user rather than the folder Huginn happened to launch from, and it points at
+whichever copy of Huginn is running.
 
-```powershell
-claude mcp add huginn -- "$env:LOCALAPPDATA\Huginn\current\Huginn.exe" --mcp
+The same panel prints everything needed to set it up by hand, for a different agent or when the
+button will not do: the command, the `--mcp` argument, the Claude Code one-liner, and the server as
+configuration, which is the shape nearly every MCP client takes.
+
+```json
+{
+  "mcpServers": {
+    "huginn": {
+      "command": "C:\Users\you\AppData\Local\Huginn\current\Huginn.exe",
+      "args": ["--mcp"]
+    }
+  }
+}
 ```
 
 The tools:
