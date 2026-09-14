@@ -265,8 +265,12 @@ public static class McpServer
         {
             if (source == null) continue;
             string flag = Bool(source, "needsAttention") ? "   <-- needs attention" : "";
-            text.AppendLine($"  {Str(source, "name")}: {Str(source, "state")} "
-                            + $"{Str(source, "message")}{flag}");
+
+            // The message, where there is one, already says everything the state does.
+            string message = Str(source, "message");
+            string said = message.Length > 0 ? message : Str(source, "state");
+
+            text.AppendLine($"  {Str(source, "name")}: {said}{flag}");
         }
 
         JsonArray crashes = Array(snapshot, "crashes");
@@ -290,8 +294,11 @@ public static class McpServer
         text.AppendLine($"SERVICES  ({active.Count} findings)");
         foreach (JsonNode? finding in active.Take(10))
         {
-            text.AppendLine($"  [{Str(finding, "kind")}] {Str(finding, "resource")} "
-                            + $"{Str(finding, "subject")}");
+            string resource = Str(finding, "resource");
+            string subject = Str(finding, "subject");
+            string where = subject == resource ? resource : $"{resource} · {subject}";
+
+            text.AppendLine($"  [{Str(finding, "kind")}] {where}");
             text.AppendLine($"      {Str(finding, "detail")}{Suffix(finding, "trend", " - ")}");
         }
 

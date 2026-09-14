@@ -1,3 +1,7 @@
+v.1.3.1
+   - Fixed: a source whose status already said "Connected" had the word printed twice when an agent asked for the current status, and a resource with no traffic had its name printed twice.
+   - The readme described an Azure DevOps-only tool. It now covers Sentry and Application Insights, with setup for each, and the example MCP client configuration is valid JSON rather than a Windows path with unescaped backslashes.
+
 v.1.3.0
    - New: Sentry monitoring. Huginn watches the projects you pick and raises crashes two ways. A crash that is new, has come back after being resolved, or has outgrown a mute is raised because it changed. A crash reaching at least five people and five per cent of everyone affected in the window is raised because it is big, however long it has been there. Each card carries a sparkline of the last twenty-four hours and a phrase for its shape, so a constant drip is told apart from a single burst at a glance.
    - New: Application Insights monitoring. Sign in with your own Azure account and pick the resources you can already see. Huginn reports routes that are failing, routes that are slow at the ninety-fifth percentile, failing dependencies, and resources that have gone silent, ordered by severity rather than by raw magnitude, so routes failing every call no longer sit below merely slow ones. Failing routes name the result code, because whether it is a 500 or a 405 decides what you do next.

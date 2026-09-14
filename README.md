@@ -1,8 +1,12 @@
 # Huginn
 
-A small, cross-platform desktop monitor for Azure DevOps — surfaces pull
-requests that need your review and pipeline builds that have failed, with
-desktop toasts and a taskbar badge so they're hard to miss.
+A small, cross-platform desktop monitor for the things that need you now:
+pull requests waiting on your review, builds that have failed, app crashes,
+and services that are failing, slow or silent. Desktop toasts and a taskbar
+badge make them hard to miss, and it can answer an AI coding agent asking
+what is currently broken.
+
+Each source is independent. Configure one and the rest stay out of the way.
 
 Built on [Avalonia](https://avaloniaui.net/) and .NET 10.
 
@@ -15,8 +19,20 @@ Built on [Avalonia](https://avaloniaui.net/) and .NET 10.
 - **Build failure monitoring** — your personal build failures + any pipelines
   you choose to watch. Retrying builds are de-escalated to a warning section
   while the rerun is in flight.
-- **Desktop notifications** — toasts for new review-PRs and new build
-  failures.
+- **Crash monitoring** (Sentry) — issues are raised either because they
+  changed (new, returned after being resolved, or outgrew a mute) or because
+  they are big, measured by how many people they reach. Each carries a
+  sparkline of the last 24 hours and a phrase for its shape, so a constant
+  drip reads differently from a single burst.
+- **Service monitoring** (Azure Application Insights) — failing routes, slow
+  routes at the 95th percentile, failing dependencies, and resources that
+  have gone silent. Ordered by severity rather than raw magnitude, and
+  failing routes name the result code.
+- **Honest empty panes** — every pane says when it was last checked, and a
+  pane whose source cannot answer says so instead of looking calm. An empty
+  list from a broken source is the one thing a monitor must not get wrong.
+- **Desktop notifications** — one per source per check, summarised. Ten new
+  items produce one toast naming the count and what is in it, not ten toasts.
 - **Taskbar / dock badge** — count of items needing attention, with
   acknowledged and approved items excluded.
 - **Launch at login** — Windows registry `Run` key on Windows, LaunchAgent on
@@ -65,17 +81,38 @@ you launch the app — you don't need to repeat any of this.
 
 When you first launch Huginn, the Settings panel opens automatically.
 
-1. **Organization & Project** — enter the values from your DevOps URL
+Each connection is separate, and you only need the ones you want. Every
+credential below is stored in Windows Credential Manager (DPAPI-encrypted) or
+the macOS Keychain — never in a settings file.
+
+### Azure DevOps
+
+1. **Organization & Project** — the values from your DevOps URL
    `https://dev.azure.com/{Organization}/{Project}`.
 2. **Personal Access Token** — click "Open the token settings page ↗" in
-   Settings (the link is generated from your Organization). Create a token
-   with **Code → Read** and **Build → Read** scopes, then paste it.
-   - Stored securely: Windows Credential Manager (DPAPI-encrypted) on
-     Windows, macOS Keychain on macOS.
-3. **Test Connection** to verify your credentials work.
-4. **Pipeline monitoring** (optional) — pick which pipelines to watch.
-5. **Save & Connect** — Huginn polls every 5 minutes and sends desktop
-   notifications for new items.
+   Settings. Create a token with **Code → Read** and **Build → Read** scopes,
+   then paste it.
+3. **Test connection**, then pick any pipelines you want watched.
+
+### Sentry
+
+1. **Organization** — your Sentry organisation slug.
+2. **Region URL** — EU-resident organisations answer on a regional host rather
+   than `sentry.io`; the org settings page shows which region yours is in.
+3. **Auth token** — click "Open the auth tokens page ↗". Read scopes are
+   enough: `org:read`, `project:read`, `event:read`.
+4. **Test connection**, then tick the projects to watch. Nothing is watched
+   until you choose something.
+
+### Application Insights
+
+1. **Sign in** with your own Azure account. Sign-in opens your system browser
+   and waits for it to come back, so finish it there.
+2. Huginn then lists only the resources you personally have access to, so
+   nothing here is shared between people. Tick the ones to watch.
+
+Settings are saved when you close the panel or the window, so an edit
+interrupted by a restart is not thrown away.
 
 ## Building from source
 
@@ -108,7 +145,7 @@ configuration, which is the shape nearly every MCP client takes.
 {
   "mcpServers": {
     "huginn": {
-      "command": "C:\Users\you\AppData\Local\Huginn\current\Huginn.exe",
+      "command": "C:\\Users\\you\\AppData\\Local\\Huginn\\current\\Huginn.exe",
       "args": ["--mcp"]
     }
   }
