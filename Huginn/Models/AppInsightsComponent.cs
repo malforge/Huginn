@@ -3,7 +3,7 @@ namespace Huginn.Models;
 /// <summary>One Application Insights resource that Huginn can watch.</summary>
 public sealed class AppInsightsComponent
 {
-    /// <summary>Resource name, e.g. "test-go-insights-mobile-eurw".</summary>
+    /// <summary>Resource name, as it appears in the Azure portal.</summary>
     public string Name { get; init; } = "";
 
     /// <summary>The query API identifier, which is not the resource id.</summary>

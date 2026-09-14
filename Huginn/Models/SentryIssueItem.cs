@@ -9,7 +9,7 @@ public sealed partial class SentryIssueItem : ObservableObject
 {
     public string Id { get; init; } = "";
 
-    /// <summary>Human readable identifier, e.g. "POWEROFFICE-GO-4T4".</summary>
+    /// <summary>Human readable identifier, of the form PROJECT-SLUG-4T4.</summary>
     public string ShortId { get; init; } = "";
 
     /// <summary>
