@@ -699,8 +699,27 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         return anything ? checkedAt : $"all clear  ·  {checkedAt}";
     }
 
+    /// <summary>
+    /// What an empty pane says. A source that cannot report must never be described as quiet:
+    /// "nothing is wrong" and "I cannot tell" look identical otherwise, and only one is good news.
+    /// </summary>
+    private static string EmptyPaneText(ConnectionStatus status, string quiet) =>
+        status.NeedsAttention
+            ? $"Not reporting: {status.StateText}. Empty because Huginn cannot see, not because "
+              + "there is nothing to see."
+            : quiet;
+
+    public string CrashEmptyText => EmptyPaneText(
+        SentryStatus, "Nothing raised. New and returning crashes appear here.");
+
+    public string ServiceEmptyText => EmptyPaneText(
+        AppInsightsStatus, "Nothing raised. Failing routes, slow routes and dead resources appear here.");
+
     private void RefreshPaneStatuses()
     {
+        OnPropertyChanged(nameof(CrashEmptyText));
+        OnPropertyChanged(nameof(ServiceEmptyText));
+
         AdoPaneStatus = PaneLine(AdoStatus, _adoLastPolled, true);
         SentryPaneStatus = PaneLine(SentryStatus, _sentryLastPolled, CrashActions.Count > 0);
         ServicePaneStatus = PaneLine(AppInsightsStatus, _serviceLastPolled, ServiceActions.Count > 0);

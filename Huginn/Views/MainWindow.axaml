@@ -745,7 +745,7 @@
 
                                 <TextBlock IsVisible="{Binding !CrashActions.Count}" Margin="8,10"
                                            FontSize="12" Opacity="0.45" TextWrapping="Wrap"
-                                           Text="Nothing raised. New and returning crashes appear here."/>
+                                           Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CrashEmptyText}"/>
                             </StackPanel>
                         </ScrollViewer>
 
@@ -831,7 +831,7 @@
 
                                 <TextBlock IsVisible="{Binding !ServiceActions.Count}" Margin="8,10"
                                            FontSize="12" Opacity="0.45" TextWrapping="Wrap"
-                                           Text="Nothing raised. Failing routes, slow routes and dead resources appear here."/>
+                                           Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ServiceEmptyText}"/>
                             </StackPanel>
                         </ScrollViewer>
 
