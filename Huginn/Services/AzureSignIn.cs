@@ -90,16 +90,40 @@ public sealed class AzureSignIn
     }
 
     /// <summary>
-    /// Silently acquires a token to confirm the stored sign-in still works. A stored record only
-    /// proves a file exists; it says nothing about whether the account is still usable.
+    /// Silently acquires the token monitoring actually needs, to confirm the stored sign-in still
+    /// works. A stored record only proves a file exists; it says nothing about whether the account
+    /// is still usable.
     /// </summary>
+    /// <remarks>
+    /// Asks for the query scope rather than ARM. Polling only ever reads telemetry; ARM is needed
+    /// to browse resources, which happens when the user opens settings. Checking ARM here stopped
+    /// monitoring over a permission it was not about to use, which matters where a sign-in
+    /// frequency policy covers Azure Management but not the telemetry endpoint.
+    /// </remarks>
     public async Task<bool> IsStillSignedInAsync(TokenCredential credential, CancellationToken ct = default)
+    {
+        if (await TokenFailureAsync(credential, QueryScope, ct) is not { } queryFailure) return true;
+
+        // Both are recorded on failure. Which scope dies first says whether a policy covers only
+        // Azure Management or the telemetry endpoint too, and that decides whether monitoring has
+        // to stop at all.
+        string? armFailure = await TokenFailureAsync(credential, ArmScope, ct);
+
+        Log.Info($"Stored Azure sign-in for {_slot} is no longer usable. "
+                 + $"Query scope: {queryFailure} // ARM scope: {armFailure ?? "still valid"}");
+
+        return false;
+    }
+
+    /// <summary>Null when the token came back, otherwise why it did not.</summary>
+    private static async Task<string?> TokenFailureAsync(
+        TokenCredential credential, string[] scope, CancellationToken ct)
     {
         try
         {
             await Task.Run(
-                () => credential.GetTokenAsync(new TokenRequestContext(ArmScope), ct).AsTask(), ct);
-            return true;
+                () => credential.GetTokenAsync(new TokenRequestContext(scope), ct).AsTask(), ct);
+            return null;
         }
         catch (OperationCanceledException)
         {
@@ -107,8 +131,7 @@ public sealed class AzureSignIn
         }
         catch (Exception ex)
         {
-            Log.Info($"Stored Azure sign-in for {_slot} is no longer usable: {ex.Message}");
-            return false;
+            return ex.Message;
         }
     }
 
