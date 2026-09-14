@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Huginn.Models;
 
@@ -8,7 +9,7 @@ namespace Huginn.Models;
 /// <remarks>
 /// Kept in one place because both readers need the same thing. A person pastes
 /// <see cref="Evidence"/> into the portal to see exactly what Huginn saw; an agent asks Huginn to
-/// run <see cref="Explanation"/> and gets the answer without needing the schema or the access.
+/// run <see cref="Explanations"/> and gets the answer without needing the schema or the access.
 /// </remarks>
 public static class FindingQuery
 {
@@ -59,58 +60,71 @@ public static class FindingQuery
     /// identifies a person: no user ids, no query strings, no custom dimensions. Telemetry read
     /// this way ends up in an agent's context and from there in a transcript.
     /// </summary>
-    public static string Explanation(ServiceFinding finding)
+    public static IReadOnlyList<Drilldown> Explanations(ServiceFinding finding)
     {
         string window = Window(finding);
         string subject = Literal(finding.Subject);
 
         return finding.Kind switch
         {
-            FindingKind.Latency => $"""
-                requests
-                | where timestamp > ago({window})
-                | where name == {subject}
-                | summarize calls = sum(itemCount),
-                            p50 = round(percentile(duration, 50)),
-                            p95 = round(percentile(duration, 95)),
-                            p99 = round(percentile(duration, 99))
-                          by bin(timestamp, 15m)
-                | order by timestamp asc
-                """,
+            FindingKind.Latency =>
+            [
+                new Drilldown("How the latency moved through the window", $"""
+                    requests
+                    | where timestamp > ago({window})
+                    | where name == {subject}
+                    | summarize calls = sum(itemCount),
+                                p50 = round(percentile(duration, 50)),
+                                p95 = round(percentile(duration, 95)),
+                                p99 = round(percentile(duration, 99))
+                              by bin(timestamp, 15m)
+                    | order by timestamp asc
+                    """),
+            ],
 
-            FindingKind.Dependency => $"""
-                dependencies
-                | where timestamp > ago({window}) and success == false
-                | where strcat(type, " ", target) == {subject}
-                | summarize failures = sum(itemCount),
-                            slowest = round(max(duration))
-                          by resultCode, bin(timestamp, 30m)
-                | order by timestamp asc
-                """,
+            FindingKind.Dependency =>
+            [
+                new Drilldown("Failures by result code, over time", $"""
+                    dependencies
+                    | where timestamp > ago({window}) and success == false
+                    | where strcat(type, " ", target) == {subject}
+                    | summarize failures = sum(itemCount),
+                                slowest = round(max(duration))
+                              by resultCode, bin(timestamp, 30m)
+                    | order by timestamp asc
+                    """),
+            ],
 
-            FindingKind.NoTraffic => $"""
-                requests
-                | where timestamp > ago(7d)
-                | summarize calls = sum(itemCount) by bin(timestamp, 1h)
-                | order by timestamp asc
-                """,
+            FindingKind.NoTraffic =>
+            [
+                new Drilldown("Traffic over the last week", """
+                    requests
+                    | where timestamp > ago(7d)
+                    | summarize calls = sum(itemCount) by bin(timestamp, 1h)
+                    | order by timestamp asc
+                    """),
+            ],
 
-            // A failing route: the codes, then whatever the server threw behind them.
-            _ => $"""
-                let window = {window};
-                let route = {subject};
-                requests
-                | where timestamp > ago(window) and name == route
-                | summarize calls = sum(itemCount) by resultCode
-                | order by calls desc
-                | take 10;
-                requests
-                | where timestamp > ago(window) and name == route and success == false
-                | join kind=inner (exceptions | where timestamp > ago(window)) on operation_Id
-                | summarize occurrences = count() by type, outerMessage, method
-                | order by occurrences desc
-                | take 10
-                """,
+            // A failing route: the codes, then whatever the server threw behind them. Two
+            // queries rather than one of two statements, so each answer arrives labelled.
+            _ =>
+            [
+                new Drilldown("Result codes", $"""
+                    requests
+                    | where timestamp > ago({window}) and name == {subject}
+                    | summarize calls = sum(itemCount) by resultCode
+                    | order by calls desc
+                    | take 10
+                    """),
+                new Drilldown("Exceptions behind the failures", $"""
+                    requests
+                    | where timestamp > ago({window}) and name == {subject} and success == false
+                    | join kind=inner (exceptions | where timestamp > ago({window})) on operation_Id
+                    | summarize occurrences = count() by type, outerMessage, method
+                    | order by occurrences desc
+                    | take 10
+                    """),
+            ],
         };
     }
 

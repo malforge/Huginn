@@ -4,6 +4,7 @@ using System.IO;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -244,6 +245,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     /// <summary>Watches for an agent asking Huginn to poll now.</summary>
     private FileSystemWatcher? _refreshRequests;
+    private FileSystemWatcher? _investigationRequests;
 
     public MainWindowViewModel(AppSettings settings, INotificationService notifications)
     {
@@ -267,6 +269,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         UpdateService.Instance.StartPolling();
 
         WatchForRefreshRequests();
+        WatchForInvestigationRequests();
         RefreshIgnoredPatterns();
         RefreshAlwaysShown();
         _ = RefreshAgentRegistrationAsync();
@@ -2092,6 +2095,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller?.Dispose();
         _badge?.Dispose();
         _refreshRequests?.Dispose();
+        _investigationRequests?.Dispose();
     }
 
     /// <summary>
@@ -2130,4 +2134,106 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
             if (!IsRefreshing) RefreshCommand.Execute(null);
         });
+
+    /// <summary>
+    /// Watches for an agent asking why one finding is happening. Answering means querying
+    /// Application Insights, which only this process is signed in to do.
+    /// </summary>
+    private void WatchForInvestigationRequests()
+    {
+        try
+        {
+            Directory.CreateDirectory(AppSettings.SettingsDir);
+
+            _investigationRequests = new FileSystemWatcher(AppSettings.SettingsDir)
+            {
+                Filter = System.IO.Path.GetFileName(InvestigationStore.RequestPath),
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
+                EnableRaisingEvents = true,
+            };
+
+            _investigationRequests.Created += OnInvestigationRequested;
+            _investigationRequests.Changed += OnInvestigationRequested;
+
+            // The request is written through a temporary file, and arriving under its real name
+            // is a rename rather than a create. Without this the watcher never fires.
+            _investigationRequests.Renamed += OnInvestigationRequested;
+        }
+        catch (Exception ex)
+        {
+            // Monitoring still works without it; only the agent-triggered drill-down is lost.
+            Log.Warn($"Could not watch for agent investigation requests: {ex.Message}");
+        }
+    }
+
+    private void OnInvestigationRequested(object? sender, FileSystemEventArgs e)
+        => Dispatcher.UIThread.Post(() => _ = AnswerInvestigationAsync());
+
+    /// <summary>
+    /// Answers one drill-down request. Every outcome writes an answer, including the ones that
+    /// explain why there is none: the asker is waiting on a file and cannot tell a refusal from
+    /// a Huginn that is not running.
+    /// </summary>
+    private async Task AnswerInvestigationAsync()
+    {
+        JsonObject? request = InvestigationStore.Read(InvestigationStore.RequestPath);
+
+        // Consume it first, so a failure cannot leave a request that re-fires on every start.
+        InvestigationStore.Discard(InvestigationStore.RequestPath);
+
+        if (request?["id"]?.GetValue<string>() is not { Length: > 0 } id) return;
+
+        string subject = Ask(request, "subject");
+        string resource = Ask(request, "resource");
+        string kind = Ask(request, "kind");
+
+        ServiceFinding? finding = _lastFindings.FirstOrDefault(f =>
+            string.Equals(f.Subject, subject, StringComparison.OrdinalIgnoreCase)
+            && (resource.Length == 0
+                || string.Equals(f.ResourceName, resource, StringComparison.OrdinalIgnoreCase))
+            && (kind.Length == 0
+                || string.Equals(f.Kind.ToString(), kind, StringComparison.OrdinalIgnoreCase)));
+
+        if (finding == null)
+        {
+            InvestigationStore.Answer(id,
+                $"\"{subject}\" is not among the findings Huginn currently holds, so there is "
+                + "nothing to drill into. It may have cleared, or been muted or ignored since "
+                + "the snapshot was read.");
+            return;
+        }
+
+        var signIn = new AzureSignIn(
+            "appinsights", _settings.AppInsightsTenantId, _settings.AppInsightsClientId);
+
+        if (!signIn.HasStoredAccount)
+        {
+            InvestigationStore.Answer(id,
+                "Huginn is not signed in to Azure, so it cannot query Application Insights.");
+            return;
+        }
+
+        try
+        {
+            using var cts = new CancellationTokenSource(InvestigationTimeout);
+
+            // Never prompts. A browser window opening because an agent asked a question is not
+            // something the person at the keyboard asked for.
+            var (credential, _) = await signIn.GetCredentialAsync(allowPrompt: false, cts.Token);
+            using var client = new AppInsightsApiClient(credential);
+
+            InvestigationStore.Answer(id, await Investigation.RunAsync(finding, client, cts.Token));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Investigation of {finding.Subject} failed: {ex.Message}");
+            InvestigationStore.Answer(id, $"Huginn could not run the queries: {ex.Message}");
+        }
+    }
+
+    /// <summary>How long a drill-down may take before the asker is told it did not work.</summary>
+    private static readonly TimeSpan InvestigationTimeout = TimeSpan.FromSeconds(45);
+
+    private static string Ask(JsonObject request, string name) =>
+        request[name]?.GetValue<string>() ?? "";
 }

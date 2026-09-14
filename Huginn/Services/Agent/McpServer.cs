@@ -126,6 +126,25 @@ public static class McpServer
                     + "autocomplete-off, mine or acknowledged."),
             }),
 
+        Tool("huginn_investigate",
+            "Why one service finding is happening rather than that it is: the result codes "
+            + "behind a failing route and the exceptions under them, how a latency moved through "
+            + "the window, or what a failing dependency returned. Huginn runs its own fixed "
+            + "queries; there is no way to ask it anything else. Needs Huginn running and signed "
+            + "in to Azure. Name a subject from huginn_services.",
+            new JsonObject
+            {
+                ["subject"] = Prop("string",
+                    "The route or dependency, exactly as huginn_services gives it."),
+                ["resource"] = Prop("string",
+                    "Which resource, when the same subject is a finding on more than one."),
+                ["kind"] = Prop("string",
+                    "FailureRate, Latency, Dependency or NoTraffic, to pick between findings "
+                    + "that share a subject."),
+                ["waitSeconds"] = Prop("integer", "How long to wait for Huginn. Default 60."),
+            },
+            new JsonArray("subject")),
+
         Tool("huginn_builds", "Failing and retrying builds. Returns JSON.", new JsonObject()),
 
         Tool("huginn_refresh",
@@ -137,7 +156,8 @@ public static class McpServer
                 ["waitSeconds"] = Prop("integer", "How long to wait for Huginn. Default 30."),
             }));
 
-    private static JsonObject Tool(string name, string description, JsonObject properties) => new()
+    private static JsonObject Tool(
+        string name, string description, JsonObject properties, JsonArray? required = null) => new()
     {
         ["name"] = name,
         ["description"] = description,
@@ -145,7 +165,7 @@ public static class McpServer
         {
             ["type"] = "object",
             ["properties"] = properties,
-            ["required"] = new JsonArray(),
+            ["required"] = required ?? new JsonArray(),
         },
     };
 
@@ -177,6 +197,7 @@ public static class McpServer
             "huginn_services" => Text(freshness + gap + Services(snapshot, args)),
             "huginn_pull_requests" => Text(freshness + gap + PullRequests(snapshot, args)),
             "huginn_builds" => Text(freshness + gap + Dump(Array(snapshot, "builds"))),
+            "huginn_investigate" => Text(Investigate(snapshot, args)),
             _ => Text($"Unknown tool '{name}'."),
         };
     }
@@ -214,6 +235,83 @@ public static class McpServer
                    ? Freshness(stale) + Environment.NewLine + Environment.NewLine + Status(stale)
                    : "No snapshot has ever been written.");
     }
+
+    /// <summary>
+    /// Hands one finding to the running Huginn to drill into, and waits for the answer.
+    /// </summary>
+    /// <remarks>
+    /// The subject is matched against the findings in the snapshot before anything is asked, so
+    /// what can be investigated is exactly what Huginn is already reporting. This process holds
+    /// no credentials and runs no query of its own.
+    /// </remarks>
+    private static string Investigate(JsonNode snapshot, JsonObject args)
+    {
+        string subject = args["subject"]?.GetValue<string>() ?? "";
+        string resource = args["resource"]?.GetValue<string>() ?? "";
+        string kind = args["kind"]?.GetValue<string>() ?? "";
+        int seconds = Count(args, "waitSeconds", 60);
+
+        if (subject.Length == 0) return "Name a subject. " + Investigable(snapshot);
+
+        List<JsonNode?> matches = [.. Array(snapshot, "services")
+            .Where(f => Same(Str(f, "subject"), subject))
+            .Where(f => resource.Length == 0 || Same(Str(f, "resource"), resource))
+            .Where(f => kind.Length == 0 || Same(Str(f, "kind"), kind))];
+
+        if (matches.Count == 0)
+        {
+            return $"Huginn has no finding for \"{subject}\". " + Investigable(snapshot);
+        }
+
+        if (matches.Count > 1)
+        {
+            return $"\"{subject}\" is a finding more than once. Say which, with resource or kind:"
+                   + Environment.NewLine
+                   + string.Join(Environment.NewLine, matches.Select(
+                       m => $"  {Str(m, "kind")} on {Str(m, "resource")}"));
+        }
+
+        JsonNode? finding = matches[0];
+        string id = Guid.NewGuid().ToString("N");
+
+        // An answer left over from a previous call would otherwise be read as this one's.
+        InvestigationStore.Discard(InvestigationStore.ResponsePath);
+        InvestigationStore.Ask(id, Str(finding, "subject"), Str(finding, "resource"),
+            Str(finding, "kind"));
+
+        DateTime deadline = DateTime.UtcNow.AddSeconds(seconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(500);
+
+            JsonObject? answer = InvestigationStore.Read(InvestigationStore.ResponsePath);
+            if (answer == null || Str(answer, "id") != id) continue;
+
+            InvestigationStore.Discard(InvestigationStore.ResponsePath);
+            return Str(answer, "text");
+        }
+
+        return $"Huginn did not answer within {seconds}s. It is probably not running: a query "
+               + "against Application Insights needs the signed-in Huginn, so there is nothing "
+               + "to read while it is closed.";
+    }
+
+    /// <summary>Says what there is to investigate, for a subject that named nothing.</summary>
+    private static string Investigable(JsonNode snapshot)
+    {
+        List<string> subjects = [.. Array(snapshot, "services")
+            .Where(f => !Bool(f, "muted"))
+            .Select(f => $"  {Str(f, "kind")} on {Str(f, "resource")}: {Str(f, "subject")}")
+            .Take(20)];
+
+        return subjects.Count == 0
+            ? "Huginn is currently reporting no service findings."
+            : "Findings that can be investigated:" + Environment.NewLine
+              + string.Join(Environment.NewLine, subjects);
+    }
+
+    private static bool Same(string left, string right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
     private static JsonNode? ReadSnapshot()
     {
