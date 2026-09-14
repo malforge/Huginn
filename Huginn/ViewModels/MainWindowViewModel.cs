@@ -1576,22 +1576,45 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private async Task CopyPrLinkAsync(PullRequestItem? pr)
-    {
-        if (pr == null) return;
-        var url = pr.DevOpsUrl(_settings.GetWebBaseUrl());
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
-            && desktop.MainWindow?.Clipboard is { } clipboard)
-        {
-            try
-            {
-                var transfer = new DataTransfer();
-                transfer.Add(DataTransferItem.CreateText(url));
-                await clipboard.SetDataAsync(transfer);
-            }
-            catch { }
-        }
-    }
+    private Task CopyPrLinkAsync(PullRequestItem? pr) =>
+        pr == null ? Task.CompletedTask : CopyTextAsync(pr.DevOpsUrl(_settings.GetWebBaseUrl()));
+
+    /// <summary>
+    /// Copies the reference form rather than the number. A pull request is written !12345 in
+    /// Azure DevOps; a bare # there points at a work item instead.
+    /// </summary>
+    [RelayCommand]
+    private Task CopyPrReferenceAsync(PullRequestItem? pr) =>
+        pr == null ? Task.CompletedTask : CopyTextAsync($"!{pr.PullRequestId}");
+
+    [RelayCommand]
+    private Task CopyPrTitleAsync(PullRequestItem? pr) =>
+        CopyIfPresentAsync(pr?.Title);
+
+    [RelayCommand]
+    private Task CopyBuildLinkAsync(BuildItem? build) =>
+        CopyIfPresentAsync(build?.WebUrl);
+
+    /// <summary>Copies the branch the build ran on, which is usually the next thing to check out.</summary>
+    [RelayCommand]
+    private Task CopyBuildBranchAsync(BuildItem? build) =>
+        CopyIfPresentAsync(build?.BranchShortName);
+
+    [RelayCommand]
+    private Task CopyCrashLinkAsync(SentryIssueItem? issue) =>
+        CopyIfPresentAsync(issue?.Permalink);
+
+    /// <summary>Copies the short id, which is what a ticket or a chat message wants.</summary>
+    [RelayCommand]
+    private Task CopyCrashIdAsync(SentryIssueItem? issue) =>
+        CopyIfPresentAsync(issue?.ShortId);
+
+    /// <summary>
+    /// Copies text unless there is none. An empty clipboard write looks exactly like a
+    /// successful one, so nothing is better than quietly replacing what was there.
+    /// </summary>
+    private static Task CopyIfPresentAsync(string? text) =>
+        string.IsNullOrEmpty(text) ? Task.CompletedTask : CopyTextAsync(text);
 
     [RelayCommand]
     private void OpenBuildInBrowser(BuildItem? build)

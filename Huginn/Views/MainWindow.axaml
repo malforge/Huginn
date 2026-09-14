@@ -800,7 +800,9 @@
                                                                   AlertBrush="#FFCC2200"
                                                                   OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
                                                                   AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                                  CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
+                                                                  CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
+                                                                  CopyReferenceCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrReferenceCommand}"
+                                                                  CopyTitleCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrTitleCommand}"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -821,7 +823,9 @@
                                                                   AlertBrush="#FFDD6600"
                                                                   OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
                                                                   AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                                  CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
+                                                                  CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
+                                                                  CopyReferenceCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrReferenceCommand}"
+                                                                  CopyTitleCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrTitleCommand}"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -843,7 +847,9 @@
                                                                   AlertBrush="#FFDD6600"
                                                                   OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
                                                                   AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                                  CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
+                                                                  CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
+                                                                  CopyReferenceCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrReferenceCommand}"
+                                                                  CopyTitleCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrTitleCommand}"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -875,7 +881,9 @@
                                         <views:PrCardView DataContext="{Binding}"
                                                           OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
                                                           AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                          CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
+                                                          CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
+                                                          CopyReferenceCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrReferenceCommand}"
+                                                          CopyTitleCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrTitleCommand}"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -890,7 +898,9 @@
                                     <DataTemplate x:DataType="models:PullRequestItem">
                                         <views:PrCardView DataContext="{Binding}" Opacity="0.85"
                                                           OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
-                                                          CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
+                                                          CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
+                                                          CopyReferenceCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrReferenceCommand}"
+                                                          CopyTitleCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrTitleCommand}"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -906,7 +916,9 @@
                                         <views:PrCardView DataContext="{Binding}" Opacity="0.75"
                                                           OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenInBrowserCommand}"
                                                           AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).TogglePrAcknowledgedCommand}"
-                                                          CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"/>
+                                                          CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrLinkCommand}"
+                                                          CopyReferenceCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrReferenceCommand}"
+                                                          CopyTitleCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyPrTitleCommand}"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -917,7 +929,9 @@
                                         <views:BuildCardView DataContext="{Binding}" Opacity="0.75"
                                                              OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenBuildInBrowserCommand}"
                                                              OpenRetryCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenRetryBuildCommand}"
-                                                             AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ToggleBuildAcknowledgedCommand}"/>
+                                                             AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ToggleBuildAcknowledgedCommand}"
+                                                             CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyBuildLinkCommand}"
+                                                             CopyBranchCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyBuildBranchCommand}"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -950,7 +964,9 @@
                                             <DataTemplate x:DataType="models:BuildItem">
                                                 <views:BuildCardView DataContext="{Binding}"
                                                                      OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenBuildInBrowserCommand}"
-                                                                     AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ToggleBuildAcknowledgedCommand}"/>
+                                                                     AcknowledgeCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).ToggleBuildAcknowledgedCommand}"
+                                                                     CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyBuildLinkCommand}"
+                                                                     CopyBranchCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyBuildBranchCommand}"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -968,7 +984,9 @@
                                             <DataTemplate x:DataType="models:BuildItem">
                                                 <views:BuildCardView DataContext="{Binding}"
                                                                      OpenCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenBuildInBrowserCommand}"
-                                                                     OpenRetryCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenRetryBuildCommand}"/>
+                                                                     OpenRetryCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).OpenRetryBuildCommand}"
+                                                                     CopyLinkCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyBuildLinkCommand}"
+                                                                     CopyBranchCommand="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).CopyBuildBranchCommand}"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -1020,7 +1038,9 @@
                                             <views:SentryIssueCardView DataContext="{Binding}"
                                                                        OpenCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenSentryIssueCommand}"
                                                                        MuteCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleSentryIssueMutedCommand}"
-                                                                       DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissSentryIssueCommand}"/>
+                                                                       DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissSentryIssueCommand}"
+                                                                       CopyLinkCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyCrashLinkCommand}"
+                                                                       CopyIdCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyCrashIdCommand}"/>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

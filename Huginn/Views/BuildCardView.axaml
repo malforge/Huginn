@@ -8,7 +8,22 @@
              x:DataType="models:BuildItem"
              x:Name="root">
 
-    <Border Margin="0,2" Padding="8,6" CornerRadius="4"
+    <UserControl.Styles>
+        <!--
+            The open menu says "this one", so the card it belongs to has to say which one it is.
+            The border is always drawn, transparent when closed, so marking it moves nothing.
+        -->
+        <Style Selector="Border.card">
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Border.card.menu-open">
+            <Setter Property="BorderBrush" Value="#FF7FB2E5"/>
+            <Setter Property="Background" Value="#1A7FB2E5"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Border x:Name="Card" Classes="card" Margin="0,2" Padding="8,6" CornerRadius="4"
             Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
         <!--
             DockPanel rather than a Grid. The docked buttons take the width they need and the
@@ -45,6 +60,22 @@
                         </MenuFlyout>
                     </SplitButton.Flyout>
                 </SplitButton>
+
+                <!-- Getting at the branch and the run from somewhere other than the browser. -->
+                <Button x:Name="MoreButton" Content="⋯" FontSize="14" Padding="8,4"
+                        ToolTip.Tip="More actions">
+                    <Button.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                            <MenuItem Header="Copy the link to this build"
+                                      Command="{Binding #root.CopyLinkCommand}"
+                                      CommandParameter="{Binding}"/>
+                            <MenuItem Header="Copy the branch name"
+                                      ToolTip.Tip="{Binding BranchShortName}"
+                                      Command="{Binding #root.CopyBranchCommand}"
+                                      CommandParameter="{Binding}"/>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
             </StackPanel>
 
             <StackPanel>

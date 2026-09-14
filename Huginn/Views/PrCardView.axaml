@@ -8,7 +8,18 @@
              x:DataType="models:PullRequestItem"
              x:Name="root">
 
-    <Border Margin="4" Padding="12" CornerRadius="6"
+    <UserControl.Styles>
+        <!--
+            The open menu says "this one", so the card it belongs to has to say which one it is.
+            The border is always drawn, so marking it moves nothing.
+        -->
+        <Style Selector="Border.card.menu-open">
+            <Setter Property="BorderBrush" Value="#FF7FB2E5"/>
+            <Setter Property="Background" Value="#1A7FB2E5"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Border x:Name="Card" Classes="card" Margin="4" Padding="12" CornerRadius="6"
             Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1">
@@ -40,6 +51,22 @@
                         Command="{Binding #root.OpenCommand}"
                         CommandParameter="{Binding}"
                         ToolTip.Tip="Open this pull request in Azure DevOps"/>
+
+                <!-- What you reach for when writing about the pull request rather than reading it. -->
+                <Button x:Name="MoreButton" Classes="card-action" Content="⋯"
+                        ToolTip.Tip="More actions">
+                    <Button.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                            <MenuItem Header="{Binding PullRequestId, StringFormat=Copy the reference !{0}}"
+                                      Command="{Binding #root.CopyReferenceCommand}"
+                                      CommandParameter="{Binding}"
+                                      ToolTip.Tip="How a pull request is written in Azure DevOps. A # there points at a work item instead."/>
+                            <MenuItem Header="Copy the title"
+                                      Command="{Binding #root.CopyTitleCommand}"
+                                      CommandParameter="{Binding}"/>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
             </StackPanel>
 
             <StackPanel>
