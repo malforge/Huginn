@@ -14,18 +14,71 @@
         MinWidth="500" MinHeight="350">
 
     <Window.Resources>
-        <DataTemplate x:Key="ConnectionHeader" x:DataType="models:ConnectionStatus">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Grid.Column="0" Text="{Binding Glyph}" FontSize="13"
-                           Margin="0,0,8,0" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
-                           VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="2" Text="{Binding StateText}" FontSize="11" Opacity="0.6"
-                           VerticalAlignment="Center" MaxWidth="190" Margin="8,0,0,0"
-                           TextTrimming="CharacterEllipsis"/>
-            </Grid>
-        </DataTemplate>
     </Window.Resources>
+
+    <Window.Styles>
+        <!-- The settings list. A nav item is a button that looks like a row, so the whole
+             row is the target and the selected one keeps its fill under the pointer. -->
+        <Style Selector="TextBlock.navgroup">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.45"/>
+            <Setter Property="Margin" Value="10,14,0,4"/>
+        </Style>
+        <Style Selector="Button.nav">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.nav /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#22808080"/>
+        </Style>
+        <Style Selector="Button.nav.selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#333399FF"/>
+        </Style>
+        <Style Selector="Button.nav.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#443399FF"/>
+        </Style>
+        <Style Selector="Button.nav TextBlock.navlabel">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <Style Selector="Button.nav.selected TextBlock.navlabel">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <!-- One settings section. -->
+        <Style Selector="TextBlock.pagetitle">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TextBlock.group">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.8"/>
+        </Style>
+        <Style Selector="TextBlock.fieldlabel">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Opacity" Value="0.7"/>
+        </Style>
+        <Style Selector="TextBlock.pagenote">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Opacity" Value="0.55"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource SystemAltHighColor}"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="12"/>
+        </Style>
+    </Window.Styles>
 
     <Grid RowDefinitions="Auto,Auto,*,Auto">
 
@@ -69,493 +122,652 @@
             </Grid>
         </Border>
 
-        <!-- ═══ SETTINGS PANEL (toggled) ═══ -->
-        <Border Grid.Row="2" IsVisible="{Binding IsSettingsVisible}" Padding="20"
+        <!-- ═══ SETTINGS PANEL (toggled) ═══
+             A list of sections down the left, one section at a time on the right. The list
+             carries each source's state, so a connection that needs attention is visible
+             without opening anything. -->
+        <Border Grid.Row="2" IsVisible="{Binding IsSettingsVisible}"
                 ZIndex="10" Background="{DynamicResource SystemRegionColor}">
-            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <StackPanel MaxWidth="440" HorizontalAlignment="Center" Spacing="8">
+            <Grid ColumnDefinitions="248,*">
 
-                <TextBlock Text="Updates" FontSize="16" FontWeight="SemiBold"
-                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                <!-- ─── Sections ─── -->
+                <Border Grid.Column="0" Padding="12,16"
+                        Background="{DynamicResource SystemAltHighColor}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="0,0,1,0">
+                    <Grid RowDefinitions="Auto,*,Auto">
+                        <TextBlock Grid.Row="0" Text="Settings" FontSize="18" FontWeight="SemiBold"
+                                   Margin="10,0,0,8"/>
 
-                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="Running version" FontSize="12" Opacity="0.7"/>
-                        <TextBlock Text="{Binding CurrentVersionText}" FontSize="14" FontWeight="SemiBold"/>
-                    </StackPanel>
-                    <Button Grid.Column="1" Command="{Binding CheckForUpdatesCommand}"
-                            IsEnabled="{Binding CanCheckForUpdates}"
-                            Content="Check for updates" VerticalAlignment="Center"/>
-                </Grid>
+                        <StackPanel Grid.Row="1" Spacing="1">
+                            <TextBlock Classes="navgroup" Text="CONNECTIONS"/>
+                            <TextBlock Text="Whichever of these are connected get watched. The rest are left alone."
+                                       FontSize="10" Opacity="0.45" TextWrapping="Wrap"
+                                       Margin="10,0,4,4"/>
 
-                <Border Background="{DynamicResource SystemAltHighColor}"
-                        CornerRadius="6" Padding="12" Margin="0,8,0,0">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="{Binding UpdateStatusLabel}" FontSize="12" FontWeight="SemiBold"/>
-                        <TextBlock Text="{Binding UpdateStatusText}" FontSize="12" Opacity="0.85" TextWrapping="Wrap"/>
-                    </StackPanel>
-                </Border>
+                            <Button Classes="nav" Classes.selected="{Binding IsAdoPage}"
+                                    Command="{Binding ShowSettingsPageCommand}"
+                                    CommandParameter="{x:Static models:SettingsPage.AzureDevOps}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="navlabel" Text="Azure DevOps"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding AdoStatus.Glyph}" FontSize="12"
+                                               VerticalAlignment="Center"
+                                               ToolTip.Tip="{Binding AdoStatus.StateText}"/>
+                                </Grid>
+                            </Button>
 
-                <Border IsVisible="{Binding UpdateAvailable}"
-                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
-                        CornerRadius="6" Padding="12" Margin="0,8,0,0" MaxHeight="240">
-                    <Grid RowDefinitions="Auto,*">
-                        <TextBlock Grid.Row="0" Text="What's new" FontSize="12" FontWeight="SemiBold" Opacity="0.7" Margin="0,0,0,6"/>
-                        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
-                            <TextBlock Text="{Binding ReleaseNotesText}" FontSize="12" TextWrapping="Wrap"
-                                       FontFamily="Consolas,Menlo,monospace"/>
-                        </ScrollViewer>
+                            <Button Classes="nav" Classes.selected="{Binding IsSentryPage}"
+                                    Command="{Binding ShowSettingsPageCommand}"
+                                    CommandParameter="{x:Static models:SettingsPage.Sentry}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="navlabel" Text="Sentry"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding SentryStatus.Glyph}" FontSize="12"
+                                               VerticalAlignment="Center"
+                                               ToolTip.Tip="{Binding SentryStatus.StateText}"/>
+                                </Grid>
+                            </Button>
+
+                            <Button Classes="nav" Classes.selected="{Binding IsAppInsightsPage}"
+                                    Command="{Binding ShowSettingsPageCommand}"
+                                    CommandParameter="{x:Static models:SettingsPage.AppInsights}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="navlabel" Text="Application Insights"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding AppInsightsStatus.Glyph}" FontSize="12"
+                                               VerticalAlignment="Center"
+                                               ToolTip.Tip="{Binding AppInsightsStatus.StateText}"/>
+                                </Grid>
+                            </Button>
+
+                            <TextBlock Classes="navgroup" Text="MONITORING"/>
+
+                            <Button Classes="nav" Classes.selected="{Binding IsHeldBackPage}"
+                                    Command="{Binding ShowSettingsPageCommand}"
+                                    CommandParameter="{x:Static models:SettingsPage.HeldBack}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="navlabel" Text="Held back"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding SuppressedCount, StringFormat={}{0:N0}}"
+                                               FontSize="11" Opacity="0.6" VerticalAlignment="Center"
+                                               ToolTip.Tip="Kept off the board on the last check"/>
+                                </Grid>
+                            </Button>
+
+                            <Button Classes="nav" Classes.selected="{Binding IsAgentsPage}"
+                                    Command="{Binding ShowSettingsPageCommand}"
+                                    CommandParameter="{x:Static models:SettingsPage.Agents}">
+                                <TextBlock Classes="navlabel" Text="Agents"/>
+                            </Button>
+
+                            <TextBlock Classes="navgroup" Text="APPLICATION"/>
+
+                            <Button Classes="nav" Classes.selected="{Binding IsUpdatesPage}"
+                                    Command="{Binding ShowSettingsPageCommand}"
+                                    CommandParameter="{x:Static models:SettingsPage.Updates}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="navlabel" Text="Updates"/>
+                                    <TextBlock Grid.Column="1" Text="●" FontSize="11" Foreground="#FF66AAFF"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding UpdateAvailable}"
+                                               ToolTip.Tip="A new version is ready to install"/>
+                                </Grid>
+                            </Button>
+
+                            <Button Classes="nav" Classes.selected="{Binding IsGeneralPage}"
+                                    Command="{Binding ShowSettingsPageCommand}"
+                                    CommandParameter="{x:Static models:SettingsPage.General}">
+                                <TextBlock Classes="navlabel" Text="General"/>
+                            </Button>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="2" Spacing="8" Margin="2,12,2,0">
+                            <TextBlock Text="Changes are saved when you close settings."
+                                       FontSize="11" Opacity="0.5" TextWrapping="Wrap"/>
+                            <Button Command="{Binding ToggleSettingsCommand}" Content="Done"
+                                    Classes="accent" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Center"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
-                <Button IsVisible="{Binding UpdateAvailable}"
-                        Command="{Binding RestartNowCommand}"
-                        Content="Install update and restart now" Classes="accent"
-                        HorizontalAlignment="Center" Margin="0,8,0,0"/>
-                <Separator Margin="0,12"/>
+                <!-- ─── The selected section ─── -->
+                <ScrollViewer Grid.Column="1" Padding="28,20"
+                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <Panel MaxWidth="1100" HorizontalAlignment="Left">
 
-                <!-- ─── Connections ─── -->
-                <TextBlock Text="Connections" FontSize="16" FontWeight="SemiBold"
-                           HorizontalAlignment="Center"/>
-                <TextBlock Text="Each source holds its own sign-in and its own list of what to watch. Huginn keeps monitoring whichever ones are connected."
-                           FontSize="11" Opacity="0.5" TextWrapping="Wrap" TextAlignment="Center"
-                           HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                        <!-- ─── Azure DevOps ─── -->
+                        <StackPanel IsVisible="{Binding IsAdoPage}" Spacing="8">
+                            <TextBlock Classes="pagetitle" Text="Azure DevOps"/>
+                            <TextBlock Classes="pagenote"
+                                       Text="Pull requests waiting on you, and the pipelines you care about. The token is yours, so Huginn sees exactly what you see."/>
 
-                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                          IsExpanded="{Binding IsAdoExpanded}"
-                          Header="{Binding AdoStatus}"
-                          HeaderTemplate="{StaticResource ConnectionHeader}">
-                    <StackPanel Spacing="8" Margin="0,8,0,0">
-                        <TextBlock Text="Organization" FontSize="12" Opacity="0.7"/>
-                        <TextBox Text="{Binding Organization}" PlaceholderText="e.g. contoso"/>
+                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0">
+                                <StackPanel Grid.Column="0" Spacing="8">
+                                    <TextBlock Classes="group" Text="Connection"/>
 
-                        <TextBlock Text="Project" FontSize="12" Opacity="0.7"/>
-                        <TextBox Text="{Binding Project}" PlaceholderText="e.g. fabrikam"/>
+                                    <TextBlock Classes="fieldlabel" Text="Organization"/>
+                                    <TextBox Text="{Binding Organization}" PlaceholderText="e.g. contoso"/>
 
-                        <TextBlock Text="Personal Access Token" FontSize="12" Opacity="0.7"/>
-                        <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="How to create a PAT:" FontSize="12" FontWeight="SemiBold"/>
-                                <StackPanel Orientation="Horizontal" Spacing="0">
-                                    <TextBlock FontSize="12" Text="1. "/>
-                                    <Button Command="{Binding OpenPatPageCommand}"
-                                            Padding="0" Margin="0" MinHeight="0" MinWidth="0"
-                                            Background="Transparent" BorderThickness="0" Cursor="Hand">
-                                        <TextBlock FontSize="12" Text="Open the token settings page ↗"
-                                                   Foreground="#648CB4" TextDecorations="Underline"/>
-                                    </Button>
-                                </StackPanel>
-                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="2. Click &apos;New Token&apos;"/>
-                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="3. Give it a name (e.g. &apos;Huginn&apos;)"/>
-                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="4. Under Scopes, select Code → Read and Build → Read"/>
-                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="5. Click Create and paste the token below"/>
-                            </StackPanel>
-                        </Border>
-                        <TextBox Text="{Binding Pat}" PlaceholderText="Paste your PAT here"
-                                 PasswordChar="●" RevealPassword="False"/>
+                                    <TextBlock Classes="fieldlabel" Text="Project"/>
+                                    <TextBox Text="{Binding Project}" PlaceholderText="e.g. fabrikam"/>
 
-                        <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
-                            <Button Grid.Column="0" Command="{Binding TestConnectionCommand}"
-                                    CommandParameter="{x:Static models:ConnectionKind.AzureDevOps}"
-                                    IsEnabled="{Binding !AdoStatus.IsBusy}"
-                                    Content="Test connection"/>
-                            <TextBlock Grid.Column="1" Text="{Binding AdoStatus.Glyph}" FontSize="14"
-                                       VerticalAlignment="Center" Margin="10,0,6,0"/>
-                            <TextBlock Grid.Column="2" Text="{Binding AdoStatus.StateText}" FontSize="12"
-                                       VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
-                        </Grid>
+                                    <TextBlock Classes="fieldlabel" Text="Personal Access Token"/>
+                                    <Border Classes="card">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="How to create a PAT:" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="0">
+                                                <TextBlock FontSize="12" Text="1. "/>
+                                                <Button Command="{Binding OpenPatPageCommand}"
+                                                        Padding="0" Margin="0" MinHeight="0" MinWidth="0"
+                                                        Background="Transparent" BorderThickness="0" Cursor="Hand">
+                                                    <TextBlock FontSize="12" Text="Open the token settings page ↗"
+                                                               Foreground="#648CB4" TextDecorations="Underline"/>
+                                                </Button>
+                                            </StackPanel>
+                                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="2. Click &apos;New Token&apos;"/>
+                                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="3. Give it a name (e.g. &apos;Huginn&apos;)"/>
+                                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="4. Under Scopes, select Code → Read and Build → Read"/>
+                                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="5. Click Create and paste the token below"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBox Text="{Binding Pat}" PlaceholderText="Paste your PAT here"
+                                             PasswordChar="●" RevealPassword="False"/>
 
-                        <Separator Margin="0,4"/>
-                        <TextBlock Text="What to watch" FontSize="12" FontWeight="SemiBold" Opacity="0.8"/>
-                        <CheckBox IsChecked="{Binding MonitorMyBuilds}">
-                            <TextBlock Text="Notify me when my builds fail" TextWrapping="Wrap"/>
-                        </CheckBox>
-
-                        <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                                  Header="Pipelines">
-                            <StackPanel Spacing="8" Margin="0,8,0,0">
-                                <TextBlock Text="Get alerted when these pipelines fail:" FontSize="11" Opacity="0.5"/>
-
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Command="{Binding LoadPipelinesCommand}" Content="⟳"
-                                            FontSize="14" Width="32" HorizontalContentAlignment="Center"
-                                            IsEnabled="{Binding !IsLoadingPipelines}"
-                                            ToolTip.Tip="Refresh pipeline list"/>
-                                    <TextBlock Text="{Binding PipelinePickerStatus}" FontSize="12"
-                                               VerticalAlignment="Center" Opacity="0.7"
-                                               ToolTip.Tip="{Binding PipelinePickerTooltip}"/>
+                                    <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
+                                        <Button Grid.Column="0" Command="{Binding TestConnectionCommand}"
+                                                CommandParameter="{x:Static models:ConnectionKind.AzureDevOps}"
+                                                IsEnabled="{Binding !AdoStatus.IsBusy}"
+                                                Content="Test connection"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding AdoStatus.Glyph}" FontSize="14"
+                                                   VerticalAlignment="Center" Margin="10,0,6,0"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding AdoStatus.StateText}" FontSize="12"
+                                                   VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
+                                    </Grid>
                                 </StackPanel>
 
-                                <TextBox Text="{Binding PipelineFilter}" PlaceholderText="🔍 Filter pipelines…"
-                                         IsVisible="{Binding AvailablePipelines.Count}"/>
+                                <StackPanel Grid.Column="2" Spacing="8">
+                                    <TextBlock Classes="group" Text="What to watch"/>
 
-                                <Border MaxHeight="200" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1" CornerRadius="4"
-                                        IsVisible="{Binding AvailablePipelines.Count}">
-                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding FilteredPipelines}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="vm:SelectablePipeline">
-                                                    <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
-                                                        <TextBlock Text="{Binding DisplayName}" FontSize="12"
-                                                                   TextTrimming="CharacterEllipsis"/>
-                                                    </CheckBox>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </Border>
-                            </StackPanel>
-                        </Expander>
-                    </StackPanel>
-                </Expander>
+                                    <CheckBox IsChecked="{Binding MonitorMyBuilds}">
+                                        <TextBlock Text="Notify me when my builds fail" TextWrapping="Wrap"/>
+                                    </CheckBox>
 
-                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                          IsExpanded="{Binding IsSentryExpanded}"
-                          Header="{Binding SentryStatus}"
-                          HeaderTemplate="{StaticResource ConnectionHeader}">
-                    <StackPanel Spacing="8" Margin="0,8,0,0">
-                        <TextBlock Text="Organization" FontSize="12" Opacity="0.7"/>
-                        <TextBox Text="{Binding SentryOrganization}" PlaceholderText="e.g. contoso-as"/>
+                                    <TextBlock Text="Pipelines" FontSize="12" FontWeight="SemiBold"
+                                               Opacity="0.8" Margin="0,8,0,0"/>
+                                    <TextBlock Classes="pagenote" Text="Get alerted when these pipelines fail:"/>
 
-                        <TextBlock Text="Region URL" FontSize="12" Opacity="0.7"/>
-                        <TextBox Text="{Binding SentryRegionUrl}" PlaceholderText="https://sentry.io"/>
-                        <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
-                                   Text="EU-resident organisations answer on https://de.sentry.io. The org settings page shows which region yours is in."/>
-
-                        <TextBlock Text="Auth token" FontSize="12" Opacity="0.7"/>
-                        <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="How to create a token:" FontSize="12" FontWeight="SemiBold"/>
-                                <StackPanel Orientation="Horizontal" Spacing="0">
-                                    <TextBlock FontSize="12" Text="1. "/>
-                                    <Button Command="{Binding OpenSentryTokenPageCommand}"
-                                            Padding="0" Margin="0" MinHeight="0" MinWidth="0"
-                                            Background="Transparent" BorderThickness="0" Cursor="Hand">
-                                        <TextBlock FontSize="12" Text="Open the auth tokens page ↗"
-                                                   Foreground="#648CB4" TextDecorations="Underline"/>
-                                    </Button>
-                                </StackPanel>
-                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="2. Click &apos;Create New Token&apos;"/>
-                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="3. Give it a name (e.g. &apos;Huginn&apos;)"/>
-                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="4. Under Scopes, select org:read, project:read and event:read"/>
-                                <TextBlock FontSize="12" TextWrapping="Wrap" Text="5. Click Create and paste the token below"/>
-                            </StackPanel>
-                        </Border>
-                        <TextBox Text="{Binding SentryToken}" PlaceholderText="Paste your Sentry token here"
-                                 PasswordChar="●" RevealPassword="False"/>
-
-                        <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
-                            <Button Grid.Column="0" Command="{Binding TestConnectionCommand}"
-                                    CommandParameter="{x:Static models:ConnectionKind.Sentry}"
-                                    IsEnabled="{Binding !SentryStatus.IsBusy}"
-                                    Content="Test connection"/>
-                            <TextBlock Grid.Column="1" Text="{Binding SentryStatus.Glyph}" FontSize="14"
-                                       VerticalAlignment="Center" Margin="10,0,6,0"/>
-                            <TextBlock Grid.Column="2" Text="{Binding SentryStatus.StateText}" FontSize="12"
-                                       VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
-                        </Grid>
-
-                        <Separator Margin="0,4"/>
-                        <TextBlock Text="What to watch" FontSize="12" FontWeight="SemiBold" Opacity="0.8"/>
-                        <TextBlock Text="Alert on new and returning issues in these projects. Nothing is watched until you tick something."
-                                   FontSize="11" Opacity="0.5" TextWrapping="Wrap"/>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Command="{Binding LoadSentryProjectsCommand}" Content="⟳"
-                                    FontSize="14" Width="32" HorizontalContentAlignment="Center"
-                                    IsEnabled="{Binding !IsLoadingSentryProjects}"
-                                    ToolTip.Tip="Refresh the project list"/>
-                            <TextBlock Text="{Binding SentryProjectPickerStatus}" FontSize="12"
-                                       VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
-                        </StackPanel>
-
-                        <Border MinHeight="60" MaxHeight="160"
-                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1" CornerRadius="4">
-                            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding AvailableSentryProjects}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:SelectableSentryProject">
-                                            <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
-                                                <TextBlock Text="{Binding Slug}" FontSize="12"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                            </CheckBox>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Border>
-                    </StackPanel>
-                </Expander>
-
-                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                          IsExpanded="{Binding IsAppInsightsExpanded}"
-                          Header="{Binding AppInsightsStatus}"
-                          HeaderTemplate="{StaticResource ConnectionHeader}">
-                    <StackPanel Spacing="8" Margin="0,8,0,0">
-                        <Border Background="{DynamicResource SystemAltHighColor}" CornerRadius="6" Padding="12">
-                            <TextBlock FontSize="12" TextWrapping="Wrap"
-                                       Text="Sign in with your own Azure account. Huginn then lists only the Application Insights resources you personally have access to, so nothing here is shared between people. Sign-in opens your system default browser and waits for it to come back, so complete it there rather than reopening the link elsewhere."/>
-                        </Border>
-
-                        <TextBlock FontSize="12" Opacity="0.8" TextWrapping="Wrap"
-                                   IsVisible="{Binding AppInsightsAccount, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                            <Run Text="Signed in as"/>
-                            <Run Text="{Binding AppInsightsAccount}" FontWeight="SemiBold"/>
-                        </TextBlock>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-                            <Button Command="{Binding SignInToAzureCommand}"
-                                    IsEnabled="{Binding !AppInsightsStatus.IsBusy}"
-                                    Content="Sign in…" Classes="accent"/>
-                            <Button Command="{Binding CancelAzureSignInCommand}"
-                                    IsEnabled="{Binding AppInsightsStatus.IsBusy}"
-                                    Content="Cancel"
-                                    ToolTip.Tip="Stop waiting for the browser to come back"/>
-                            <Button Command="{Binding SignOutOfAzureCommand}"
-                                    IsEnabled="{Binding AppInsightsAccount, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                                    Content="Sign out"/>
-                        </StackPanel>
-
-                        <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
-                            <Button Grid.Column="0" Command="{Binding TestConnectionCommand}"
-                                    CommandParameter="{x:Static models:ConnectionKind.AppInsights}"
-                                    IsEnabled="{Binding !AppInsightsStatus.IsBusy}"
-                                    Content="Test connection"/>
-                            <TextBlock Grid.Column="1" Text="{Binding AppInsightsStatus.Glyph}" FontSize="14"
-                                       VerticalAlignment="Center" Margin="10,0,6,0"/>
-                            <TextBlock Grid.Column="2" Text="{Binding AppInsightsStatus.StateText}" FontSize="12"
-                                       VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
-                        </Grid>
-
-                        <Separator Margin="0,4"/>
-                        <TextBlock Text="What to watch" FontSize="12" FontWeight="SemiBold" Opacity="0.8"/>
-                        <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                                  Header="Application Insights resources">
-                            <StackPanel Spacing="8" Margin="0,8,0,0">
-                                <TextBlock Text="Watch these resources for failures and slowdowns:" FontSize="11" Opacity="0.5"/>
-
-                                <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="Look back over" FontSize="12" Opacity="0.7"/>
-                                        <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
-                                                   Text="Short reacts quickly but is noisy on low traffic. Long is steadier but slower to notice."/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Command="{Binding LoadPipelinesCommand}" Content="⟳"
+                                                FontSize="14" Width="32" HorizontalContentAlignment="Center"
+                                                IsEnabled="{Binding !IsLoadingPipelines}"
+                                                ToolTip.Tip="Refresh pipeline list"/>
+                                        <TextBlock Text="{Binding PipelinePickerStatus}" FontSize="12"
+                                                   VerticalAlignment="Center" Opacity="0.7"
+                                                   ToolTip.Tip="{Binding PipelinePickerTooltip}"/>
                                     </StackPanel>
-                                    <ComboBox Grid.Column="1" Width="150" FontSize="12"
-                                              VerticalAlignment="Center" Margin="8,0,0,0"
-                                              ItemsSource="{Binding WindowChoices}"
-                                              SelectedItem="{Binding SelectedWindow}"
-                                              ToolTip.Tip="How much history each rule examines"/>
-                                </Grid>
 
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Command="{Binding LoadComponentsCommand}" Content="⟳"
-                                            FontSize="14" Width="32" HorizontalContentAlignment="Center"
-                                            IsEnabled="{Binding !IsLoadingComponents}"
-                                            ToolTip.Tip="Refresh the resource list"/>
-                                    <TextBlock Text="{Binding ComponentPickerStatus}" FontSize="12"
-                                               VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
-                                </StackPanel>
+                                    <TextBox Text="{Binding PipelineFilter}" PlaceholderText="🔍 Filter pipelines…"
+                                             IsVisible="{Binding AvailablePipelines.Count}"/>
 
-                                <TextBox Text="{Binding ComponentFilter}" PlaceholderText="🔍 Filter resources…"
-                                         IsVisible="{Binding AvailableComponents.Count}"/>
-
-                                <Border MaxHeight="200" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1" CornerRadius="4"
-                                        IsVisible="{Binding AvailableComponents.Count}">
-                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding FilteredComponents}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="vm:SelectableComponent">
-                                                    <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
-                                                        <StackPanel>
+                                    <Border MaxHeight="360" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1" CornerRadius="4"
+                                            IsVisible="{Binding AvailablePipelines.Count}">
+                                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                            <ItemsControl ItemsSource="{Binding FilteredPipelines}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:SelectablePipeline">
+                                                        <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
                                                             <TextBlock Text="{Binding DisplayName}" FontSize="12"
                                                                        TextTrimming="CharacterEllipsis"/>
-                                                            <TextBlock Text="{Binding Qualifier}" FontSize="10" Opacity="0.5"
+                                                        </CheckBox>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- ─── Sentry ─── -->
+                        <StackPanel IsVisible="{Binding IsSentryPage}" Spacing="8">
+                            <TextBlock Classes="pagetitle" Text="Sentry"/>
+                            <TextBlock Classes="pagenote"
+                                       Text="Crashes from the mobile apps. An issue is raised when it is new, when it has come back, or when it has reached enough people to matter."/>
+
+                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0">
+                                <StackPanel Grid.Column="0" Spacing="8">
+                                    <TextBlock Classes="group" Text="Connection"/>
+
+                                    <TextBlock Classes="fieldlabel" Text="Organization"/>
+                                    <TextBox Text="{Binding SentryOrganization}" PlaceholderText="e.g. contoso-as"/>
+
+                                    <TextBlock Classes="fieldlabel" Text="Region URL"/>
+                                    <TextBox Text="{Binding SentryRegionUrl}" PlaceholderText="https://sentry.io"/>
+                                    <TextBlock Classes="pagenote"
+                                               Text="EU-resident organisations answer on https://de.sentry.io. The org settings page shows which region yours is in."/>
+
+                                    <TextBlock Classes="fieldlabel" Text="Auth token"/>
+                                    <Border Classes="card">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="How to create a token:" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="0">
+                                                <TextBlock FontSize="12" Text="1. "/>
+                                                <Button Command="{Binding OpenSentryTokenPageCommand}"
+                                                        Padding="0" Margin="0" MinHeight="0" MinWidth="0"
+                                                        Background="Transparent" BorderThickness="0" Cursor="Hand">
+                                                    <TextBlock FontSize="12" Text="Open the auth tokens page ↗"
+                                                               Foreground="#648CB4" TextDecorations="Underline"/>
+                                                </Button>
+                                            </StackPanel>
+                                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="2. Click &apos;Create New Token&apos;"/>
+                                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="3. Give it a name (e.g. &apos;Huginn&apos;)"/>
+                                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="4. Under Scopes, select org:read, project:read and event:read"/>
+                                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="5. Click Create and paste the token below"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBox Text="{Binding SentryToken}" PlaceholderText="Paste your Sentry token here"
+                                             PasswordChar="●" RevealPassword="False"/>
+
+                                    <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
+                                        <Button Grid.Column="0" Command="{Binding TestConnectionCommand}"
+                                                CommandParameter="{x:Static models:ConnectionKind.Sentry}"
+                                                IsEnabled="{Binding !SentryStatus.IsBusy}"
+                                                Content="Test connection"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding SentryStatus.Glyph}" FontSize="14"
+                                                   VerticalAlignment="Center" Margin="10,0,6,0"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding SentryStatus.StateText}" FontSize="12"
+                                                   VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
+                                    </Grid>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" Spacing="8">
+                                    <TextBlock Classes="group" Text="What to watch"/>
+                                    <TextBlock Classes="pagenote"
+                                               Text="Alert on new and returning issues in these projects. Nothing is watched until you tick something."/>
+
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Command="{Binding LoadSentryProjectsCommand}" Content="⟳"
+                                                FontSize="14" Width="32" HorizontalContentAlignment="Center"
+                                                IsEnabled="{Binding !IsLoadingSentryProjects}"
+                                                ToolTip.Tip="Refresh the project list"/>
+                                        <TextBlock Text="{Binding SentryProjectPickerStatus}" FontSize="12"
+                                                   VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
+                                    </StackPanel>
+
+                                    <Border MinHeight="60" MaxHeight="360"
+                                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1" CornerRadius="4">
+                                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                            <ItemsControl ItemsSource="{Binding AvailableSentryProjects}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:SelectableSentryProject">
+                                                        <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
+                                                            <TextBlock Text="{Binding Slug}" FontSize="12"
                                                                        TextTrimming="CharacterEllipsis"/>
-                                                        </StackPanel>
-                                                    </CheckBox>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </Border>
-                            </StackPanel>
-                        </Expander>
+                                                        </CheckBox>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
 
-                        <Expander Header="What is being held back" HorizontalAlignment="Stretch"
-                                  IsExpanded="{Binding IsSuppressedExpanded}"
-                                  HorizontalContentAlignment="Stretch" Margin="0,4,0,0">
-                            <StackPanel Spacing="8" Margin="0,8,0,0">
-                                <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                                           Text="An internet-facing resource is scanned constantly, and scanning means asking for paths that do not exist. Huginn holds those back so they cannot bury a real failure, and lists them here so nothing is hidden without you being able to see it."/>
+                        <!-- ─── Application Insights ─── -->
+                        <StackPanel IsVisible="{Binding IsAppInsightsPage}" Spacing="8">
+                            <TextBlock Classes="pagetitle" Text="Application Insights"/>
+                            <TextBlock Classes="pagenote"
+                                       Text="Server telemetry: routes that are failing, routes that have gone slow, and the dependencies letting them down."/>
 
-                                <TextBlock Text="{Binding SuppressedSummary}" FontSize="12"
-                                           FontWeight="SemiBold" TextWrapping="Wrap"/>
+                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0">
+                                <StackPanel Grid.Column="0" Spacing="8">
+                                    <TextBlock Classes="group" Text="Sign-in"/>
 
-                                <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1" CornerRadius="4" MaxHeight="200"
-                                        IsVisible="{Binding SuppressedSubjects.Count}">
-                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                                        <ItemsControl ItemsSource="{Binding SuppressedSubjects}" Margin="8">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="models:IgnoredSubject">
-                                                    <Grid ColumnDefinitions="*,Auto" Margin="0,2">
-                                                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                                                            <TextBlock Text="{Binding Subject}" FontSize="11"
-                                                                       TextTrimming="CharacterEllipsis"/>
-                                                            <TextBlock Text="{Binding Pattern}" FontSize="10"
-                                                                       Opacity="0.5" TextTrimming="CharacterEllipsis"/>
-                                                        </StackPanel>
-                                                        <TextBlock Grid.Column="1" FontSize="11" Opacity="0.7"
-                                                                   VerticalAlignment="Center"
-                                                                   Text="{Binding Calls, StringFormat={}{0:N0} calls}"/>
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </Border>
+                                    <Border Classes="card">
+                                        <TextBlock FontSize="12" TextWrapping="Wrap"
+                                                   Text="Sign in with your own Azure account. Huginn then lists only the Application Insights resources you personally have access to, so nothing here is shared between people. Sign-in opens your system default browser and waits for it to come back, so complete it there rather than reopening the link elsewhere."/>
+                                    </Border>
 
-                                <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
-                                           Text="If something of yours is in this list, it is a real failure being missed. Raise it with whoever owns the route rather than adding a rule."/>
+                                    <TextBlock FontSize="12" Opacity="0.8" TextWrapping="Wrap"
+                                               IsVisible="{Binding AppInsightsAccount, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                        <Run Text="Signed in as"/>
+                                        <Run Text="{Binding AppInsightsAccount}" FontWeight="SemiBold"/>
+                                    </TextBlock>
 
-                                <Separator Margin="0,4"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                                        <Button Command="{Binding SignInToAzureCommand}"
+                                                IsEnabled="{Binding !AppInsightsStatus.IsBusy}"
+                                                Content="Sign in…" Classes="accent"/>
+                                        <Button Command="{Binding CancelAzureSignInCommand}"
+                                                IsEnabled="{Binding AppInsightsStatus.IsBusy}"
+                                                Content="Cancel"
+                                                ToolTip.Tip="Stop waiting for the browser to come back"/>
+                                        <Button Command="{Binding SignOutOfAzureCommand}"
+                                                IsEnabled="{Binding AppInsightsAccount, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                                Content="Sign out"/>
+                                    </StackPanel>
 
-                                <TextBlock Text="Never show these" FontSize="12" FontWeight="SemiBold"/>
-                                <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                                           Text="Patterns matched against the route or dependency name. * stands for any run of characters. Different from muting, which is for something of yours you have chosen to live with."/>
+                                    <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
+                                        <Button Grid.Column="0" Command="{Binding TestConnectionCommand}"
+                                                CommandParameter="{x:Static models:ConnectionKind.AppInsights}"
+                                                IsEnabled="{Binding !AppInsightsStatus.IsBusy}"
+                                                Content="Test connection"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding AppInsightsStatus.Glyph}" FontSize="14"
+                                                   VerticalAlignment="Center" Margin="10,0,6,0"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding AppInsightsStatus.StateText}" FontSize="12"
+                                                   VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.9"/>
+                                    </Grid>
 
-                                <ItemsControl ItemsSource="{Binding IgnoredPatterns}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="x:String">
-                                            <Grid ColumnDefinitions="*,Auto" Margin="0,2">
-                                                <TextBlock Grid.Column="0" Text="{Binding}" FontSize="11"
-                                                           VerticalAlignment="Center"
-                                                           FontFamily="Consolas,Menlo,monospace"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="✕" FontSize="11" Padding="6,1"
-                                                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveIgnorePatternCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        ToolTip.Tip="Stop hiding anything matching this"/>
+                                    <Expander Header="Advanced" HorizontalAlignment="Stretch"
+                                              HorizontalContentAlignment="Stretch" Margin="0,8,0,0">
+                                        <StackPanel Spacing="8" Margin="0,8,0,0">
+                                            <TextBlock Classes="pagenote"
+                                                       Text="Leave both of these empty unless someone has told you otherwise. Signing in without them uses the account and tenant you normally log in with."/>
+
+                                            <TextBlock Classes="fieldlabel" Text="Tenant ID"/>
+                                            <TextBox Text="{Binding AppInsightsTenantId}"
+                                                     PlaceholderText="empty: your usual tenant"/>
+                                            <TextBlock Classes="pagenote"
+                                                       Text="Only needed to reach a tenant you are not normally signed in to."/>
+
+                                            <TextBlock Classes="fieldlabel" Text="Application (client) ID"/>
+                                            <TextBox Text="{Binding AppInsightsClientId}"
+                                                     PlaceholderText="empty: the built-in Azure sign-in app"/>
+                                            <TextBlock Classes="pagenote"
+                                                       Text="Only needed if sign-in is refused because the built-in app is not approved, in which case paste your own app registration id."/>
+                                        </StackPanel>
+                                    </Expander>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" Spacing="8">
+                                    <TextBlock Classes="group" Text="What to watch"/>
+                                    <TextBlock Classes="pagenote" Text="Watch these resources for failures and slowdowns:"/>
+
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Classes="fieldlabel" Text="Look back over"/>
+                                            <TextBlock Classes="pagenote"
+                                                       Text="Short reacts quickly but is noisy on low traffic. Long is steadier but slower to notice."/>
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1" Width="150" FontSize="12"
+                                                  VerticalAlignment="Center" Margin="8,0,0,0"
+                                                  ItemsSource="{Binding WindowChoices}"
+                                                  SelectedItem="{Binding SelectedWindow}"
+                                                  ToolTip.Tip="How much history each rule examines"/>
+                                    </Grid>
+
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Command="{Binding LoadComponentsCommand}" Content="⟳"
+                                                FontSize="14" Width="32" HorizontalContentAlignment="Center"
+                                                IsEnabled="{Binding !IsLoadingComponents}"
+                                                ToolTip.Tip="Refresh the resource list"/>
+                                        <TextBlock Text="{Binding ComponentPickerStatus}" FontSize="12"
+                                                   VerticalAlignment="Center" Opacity="0.7" TextWrapping="Wrap"/>
+                                    </StackPanel>
+
+                                    <TextBox Text="{Binding ComponentFilter}" PlaceholderText="🔍 Filter resources…"
+                                             IsVisible="{Binding AvailableComponents.Count}"/>
+
+                                    <Border MaxHeight="360" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1" CornerRadius="4"
+                                            IsVisible="{Binding AvailableComponents.Count}">
+                                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                            <ItemsControl ItemsSource="{Binding FilteredComponents}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:SelectableComponent">
+                                                        <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding DisplayName}" FontSize="12"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                                <TextBlock Text="{Binding Qualifier}" FontSize="10" Opacity="0.5"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                            </StackPanel>
+                                                        </CheckBox>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- ─── Held back ─── -->
+                        <StackPanel IsVisible="{Binding IsHeldBackPage}" Spacing="8">
+                            <TextBlock Classes="pagetitle" Text="Held back"/>
+                            <TextBlock Classes="pagenote"
+                                       Text="An internet-facing resource is scanned constantly, and scanning means asking for paths that do not exist. Huginn holds those back so they cannot bury a real failure, and lists them here so nothing is hidden without you being able to see it."/>
+
+                            <TextBlock Text="{Binding SuppressedSummary}" FontSize="13"
+                                       FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0">
+                                <StackPanel Grid.Column="0" Spacing="8">
+                                    <TextBlock Classes="group" Text="Kept off the board"/>
+                                    <TextBlock Classes="pagenote"
+                                               Text="If something of yours is here, it is a real failure being missed. Show it again, and raise it with whoever owns the route rather than leaving it hidden."/>
+
+                                    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1" CornerRadius="4" MinHeight="80" MaxHeight="420">
+                                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                            <StackPanel Margin="8">
+                                            <TextBlock Text="Nothing held back on the last check."
+                                                       Classes="pagenote"
+                                                       IsVisible="{Binding !SuppressedSubjects.Count}"/>
+                                            <ItemsControl ItemsSource="{Binding SuppressedSubjects}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:IgnoredSubject">
+                                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,3">
+                                                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                                                <TextBlock Text="{Binding Subject}" FontSize="11"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                                <TextBlock Text="{Binding Pattern}" FontSize="10"
+                                                                           Opacity="0.5" TextTrimming="CharacterEllipsis"/>
+                                                            </StackPanel>
+                                                            <TextBlock Grid.Column="1" FontSize="11" Opacity="0.7"
+                                                                       VerticalAlignment="Center" Margin="0,0,8,0"
+                                                                       Text="{Binding Calls, StringFormat={}{0:N0} calls}"/>
+                                                            <Button Grid.Column="2" Content="Show" FontSize="11" Padding="8,2"
+                                                                    Margin="0,0,4,0" VerticalAlignment="Center"
+                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).AlwaysShowCommand}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip.Tip="Report this from now on, whatever the rules say"/>
+                                                            <Button Grid.Column="3" Content="Never" FontSize="11" Padding="8,2"
+                                                                    VerticalAlignment="Center"
+                                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).NeverShowCommand}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip.Tip="Hide this one by a rule of its own, so it stays gone"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Border>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" Spacing="8">
+                                    <TextBlock Classes="group" Text="Never show these"/>
+                                    <TextBlock Classes="pagenote"
+                                               Text="Patterns matched against the route or dependency name. * stands for any run of characters. Different from muting, which is for something of yours you have chosen to live with."/>
+
+                                    <ItemsControl ItemsSource="{Binding IgnoredPatterns}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                                    <TextBlock Grid.Column="0" Text="{Binding}" FontSize="11"
+                                                               VerticalAlignment="Center"
+                                                               FontFamily="Consolas,Menlo,monospace"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <Button Grid.Column="1" Content="✕" FontSize="11" Padding="6,1"
+                                                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveIgnorePatternCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip.Tip="Stop hiding anything matching this"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                        <TextBox Grid.Column="0" Margin="0,0,6,0"
+                                                 Text="{Binding NewIgnorePattern}"
+                                                 PlaceholderText="e.g. */admin/*"/>
+                                        <Button Grid.Column="1" Content="Add"
+                                                Command="{Binding AddIgnorePatternCommand}"/>
+                                    </Grid>
+
+                                    <TextBlock Classes="group" Text="Always shown" Margin="0,16,0,0"/>
+                                    <TextBlock Classes="pagenote"
+                                               Text="Promoted past every rule above, including the one that holds back scanner traffic."/>
+
+                                    <TextBlock Classes="pagenote" Text="Nothing promoted yet."
+                                               IsVisible="{Binding !AlwaysShownSubjects.Count}"/>
+
+                                    <ItemsControl ItemsSource="{Binding AlwaysShownSubjects}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                                    <TextBlock Grid.Column="0" Text="{Binding}" FontSize="11"
+                                                               VerticalAlignment="Center"
+                                                               FontFamily="Consolas,Menlo,monospace"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <Button Grid.Column="1" Content="✕" FontSize="11" Padding="6,1"
+                                                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).StopAlwaysShowingCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip.Tip="Let the rules apply to this again"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- ─── Agents ─── -->
+                        <StackPanel IsVisible="{Binding IsAgentsPage}" Spacing="8">
+                            <TextBlock Classes="pagetitle" Text="Agents"/>
+                            <TextBlock Classes="pagenote"
+                                       Text="Huginn can answer an AI coding agent asking what is currently broken, over MCP. It serves what the dashboard already shows, so this needs no extra sign-in and opens no network port."/>
+
+                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0">
+                                <StackPanel Grid.Column="0" Spacing="8">
+                                    <TextBlock Classes="group" Text="Claude Code"/>
+
+                                    <TextBlock FontSize="12" Opacity="0.85" TextWrapping="Wrap"
+                                               Text="{Binding AgentRegistrationStatus}"/>
+
+                                    <StackPanel Orientation="Horizontal" Spacing="6"
+                                                IsVisible="{Binding ClaudeCodeFound}">
+                                        <Button IsEnabled="{Binding !AgentBusy}"
+                                                IsVisible="{Binding AgentNeedsPointing}"
+                                                Command="{Binding RegisterAgentCommand}"
+                                                Content="{Binding AgentRegisterLabel}"
+                                                ToolTip.Tip="Writes your Claude Code configuration, for your user rather than this folder. Replaces any existing huginn entry."/>
+                                        <Button IsEnabled="{Binding !AgentBusy}"
+                                                IsVisible="{Binding AgentRegistered}"
+                                                Command="{Binding UnregisterAgentCommand}"
+                                                Content="Remove"
+                                                ToolTip.Tip="Removes the huginn entry from your Claude Code configuration."/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" Spacing="8">
+                                    <TextBlock Classes="group" Text="Setting it up by hand"/>
+                                    <TextBlock Classes="pagenote"
+                                               Text="Everything an MCP client needs is below, for a different agent or when the button will not do."/>
+
+                                    <Border Classes="card">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Classes="fieldlabel" Text="Command"/>
+                                            <SelectableTextBlock Text="{Binding AgentExecutablePath}" FontSize="11"
+                                                                 FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
+
+                                            <TextBlock Classes="fieldlabel" Text="Arguments"/>
+                                            <SelectableTextBlock Text="--mcp" FontSize="11"
+                                                                 FontFamily="Consolas,Menlo,monospace"/>
+
+                                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                                <TextBlock Grid.Column="0" Classes="fieldlabel"
+                                                           Text="Claude Code, from a terminal" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1" Content="Copy" FontSize="11" Padding="8,2"
+                                                        Command="{Binding CopyAgentCommandCommand}"/>
                                             </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                            <SelectableTextBlock Text="{Binding AgentCliCommand}" FontSize="11"
+                                                                 FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
 
-                                <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                    <TextBox Grid.Column="0" Margin="0,0,6,0"
-                                             Text="{Binding NewIgnorePattern}"
-                                             PlaceholderText="e.g. */admin/*"/>
-                                    <Button Grid.Column="1" Content="Add"
-                                            Command="{Binding AddIgnorePatternCommand}"/>
+                                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                                <TextBlock Grid.Column="0" Classes="fieldlabel"
+                                                           Text="Any other MCP client" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1" Content="Copy" FontSize="11" Padding="8,2"
+                                                        Command="{Binding CopyAgentConfigCommand}"/>
+                                            </Grid>
+                                            <SelectableTextBlock Text="{Binding AgentConfigJson}" FontSize="11"
+                                                                 FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- ─── Updates ─── -->
+                        <StackPanel IsVisible="{Binding IsUpdatesPage}" Spacing="8" MaxWidth="560"
+                                    HorizontalAlignment="Left">
+                            <TextBlock Classes="pagetitle" Text="Updates"/>
+                            <TextBlock Classes="pagenote"
+                                       Text="Huginn looks for a new version on its own. Installing one restarts it."/>
+
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,4">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Classes="fieldlabel" Text="Running version"/>
+                                    <TextBlock Text="{Binding CurrentVersionText}" FontSize="14" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Command="{Binding CheckForUpdatesCommand}"
+                                        IsEnabled="{Binding CanCheckForUpdates}"
+                                        Content="Check for updates" VerticalAlignment="Center"/>
+                            </Grid>
+
+                            <Border Classes="card">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="{Binding UpdateStatusLabel}" FontSize="12" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding UpdateStatusText}" FontSize="12" Opacity="0.85" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border IsVisible="{Binding UpdateAvailable}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                                    CornerRadius="6" Padding="12" Margin="0,8,0,0" MaxHeight="300">
+                                <Grid RowDefinitions="Auto,*">
+                                    <TextBlock Grid.Row="0" Text="What's new" FontSize="12" FontWeight="SemiBold"
+                                               Opacity="0.7" Margin="0,0,0,6"/>
+                                    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                                        <TextBlock Text="{Binding ReleaseNotesText}" FontSize="12" TextWrapping="Wrap"
+                                                   FontFamily="Consolas,Menlo,monospace"/>
+                                    </ScrollViewer>
                                 </Grid>
-                            </StackPanel>
-                        </Expander>
+                            </Border>
 
-                        <Expander Header="Advanced" HorizontalAlignment="Stretch"
-                                  HorizontalContentAlignment="Stretch" Margin="0,4,0,0">
-                            <StackPanel Spacing="8" Margin="0,8,0,0">
-                                <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                                           Text="Leave both of these empty unless someone has told you otherwise. Signing in without them uses the account and tenant you normally log in with."/>
+                            <Button IsVisible="{Binding UpdateAvailable}"
+                                    Command="{Binding RestartNowCommand}"
+                                    Content="Install update and restart now" Classes="accent"
+                                    HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                        </StackPanel>
 
-                                <TextBlock Text="Tenant ID" FontSize="12" Opacity="0.7"/>
-                                <TextBox Text="{Binding AppInsightsTenantId}"
-                                         PlaceholderText="empty: your usual tenant"/>
-                                <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
-                                           Text="Only needed to reach a tenant you are not normally signed in to."/>
+                        <!-- ─── General ─── -->
+                        <StackPanel IsVisible="{Binding IsGeneralPage}" Spacing="8" MaxWidth="560"
+                                    HorizontalAlignment="Left">
+                            <TextBlock Classes="pagetitle" Text="General"/>
 
-                                <TextBlock Text="Application (client) ID" FontSize="12" Opacity="0.7"/>
-                                <TextBox Text="{Binding AppInsightsClientId}"
-                                         PlaceholderText="empty: the built-in Azure sign-in app"/>
-                                <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
-                                           Text="Only needed if sign-in is refused because the built-in app is not approved, in which case paste your own app registration id."/>
-                            </StackPanel>
-                        </Expander>
-                    </StackPanel>
-                </Expander>
-
-                <!-- ─── General ─── -->
-                <Separator Margin="0,8"/>
-                <TextBlock Text="General" FontSize="16" FontWeight="SemiBold"
-                           HorizontalAlignment="Center" Margin="0,0,0,4"/>
-
-                <CheckBox IsChecked="{Binding AutoStartEnabled}">
-                    <TextBlock Text="Launch Huginn at login" TextWrapping="Wrap"/>
-                </CheckBox>
-
-                <!-- ═══ Updates ═══ -->
-                <Separator Margin="0,12"/>
-                <TextBlock Text="Agents" FontSize="16" FontWeight="SemiBold"
-                           HorizontalAlignment="Center"/>
-                <TextBlock Text="Huginn can answer an AI coding agent asking what is currently broken, over MCP. It serves what the dashboard already shows, so this needs no extra sign-in and opens no network port."
-                           FontSize="11" Opacity="0.5" TextWrapping="Wrap" TextAlignment="Center"
-                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
-
-                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0"
-                               FontSize="12" Opacity="0.85" TextWrapping="Wrap"
-                               Text="{Binding AgentRegistrationStatus}"/>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
-                                VerticalAlignment="Center"
-                                IsVisible="{Binding ClaudeCodeFound}">
-                        <Button IsEnabled="{Binding !AgentBusy}"
-                                IsVisible="{Binding AgentNeedsPointing}"
-                                Command="{Binding RegisterAgentCommand}"
-                                Content="{Binding AgentRegisterLabel}"
-                                ToolTip.Tip="Writes your Claude Code configuration, for your user rather than this folder. Replaces any existing huginn entry."/>
-                        <Button IsEnabled="{Binding !AgentBusy}"
-                                IsVisible="{Binding AgentRegistered}"
-                                Command="{Binding UnregisterAgentCommand}"
-                                Content="Remove"
-                                ToolTip.Tip="Removes the huginn entry from your Claude Code configuration."/>
-                    </StackPanel>
-                </Grid>
-
-                <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
-                        CornerRadius="6" Padding="12" Margin="0,8,0,0">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Setting it up by hand" FontSize="12" FontWeight="SemiBold" Opacity="0.8"/>
-                        <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                                   Text="Everything an MCP client needs is below, for a different agent or when the button will not do."/>
-
-                        <TextBlock Text="Command" FontSize="11" Opacity="0.7"/>
-                        <SelectableTextBlock Text="{Binding AgentExecutablePath}" FontSize="11"
-                                             FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
-
-                        <TextBlock Text="Arguments" FontSize="11" Opacity="0.7"/>
-                        <SelectableTextBlock Text="--mcp" FontSize="11"
-                                             FontFamily="Consolas,Menlo,monospace"/>
-
-                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                            <TextBlock Grid.Column="0" Text="Claude Code, from a terminal"
-                                       FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="Copy" FontSize="11" Padding="8,2"
-                                    Command="{Binding CopyAgentCommandCommand}"/>
-                        </Grid>
-                        <SelectableTextBlock Text="{Binding AgentCliCommand}" FontSize="11"
-                                             FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
-
-                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                            <TextBlock Grid.Column="0" Text="Any other MCP client"
-                                       FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="Copy" FontSize="11" Padding="8,2"
-                                    Command="{Binding CopyAgentConfigCommand}"/>
-                        </Grid>
-                        <SelectableTextBlock Text="{Binding AgentConfigJson}" FontSize="11"
-                                             FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
-                    </StackPanel>
-                </Border>
-
-                <TextBlock Text="Changes are saved when you close settings."
-                           FontSize="11" Opacity="0.5" HorizontalAlignment="Center"
-                           Margin="0,12,0,0"/>
-            </StackPanel>
-            </ScrollViewer>
+                            <CheckBox IsChecked="{Binding AutoStartEnabled}" Margin="0,8,0,0">
+                                <TextBlock Text="Launch Huginn at login" TextWrapping="Wrap"/>
+                            </CheckBox>
+                            <TextBlock Classes="pagenote"
+                                       Text="Watching starts when you log in rather than when you remember to open it."/>
+                        </StackPanel>
+                    </Panel>
+                </ScrollViewer>
+            </Grid>
         </Border>
 
-        <!-- ═══ PR LIST ═══ -->
         <!-- ═══ PANES ═══
              One pane per concern, in as many columns as the window allows: one when
              narrow, four when maximised. Each scrolls on its own, so a long list in

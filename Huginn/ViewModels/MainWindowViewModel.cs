@@ -166,11 +166,33 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     ];
 
     [ObservableProperty] private WindowChoice? _selectedWindow;
-    [ObservableProperty] private bool _isAdoExpanded;
-    [ObservableProperty] private bool _isSentryExpanded;
-    [ObservableProperty] private bool _isAppInsightsExpanded;
     [ObservableProperty] private bool _monitorMyBuilds;
     [ObservableProperty] private bool _autoStartEnabled;
+
+    /// <summary>The section of settings on show. Everything else is one click away, not nested.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAdoPage))]
+    [NotifyPropertyChangedFor(nameof(IsSentryPage))]
+    [NotifyPropertyChangedFor(nameof(IsAppInsightsPage))]
+    [NotifyPropertyChangedFor(nameof(IsHeldBackPage))]
+    [NotifyPropertyChangedFor(nameof(IsAgentsPage))]
+    [NotifyPropertyChangedFor(nameof(IsUpdatesPage))]
+    [NotifyPropertyChangedFor(nameof(IsGeneralPage))]
+    private SettingsPage _selectedSettingsPage;
+
+    public bool IsAdoPage => SelectedSettingsPage == SettingsPage.AzureDevOps;
+
+    public bool IsSentryPage => SelectedSettingsPage == SettingsPage.Sentry;
+
+    public bool IsAppInsightsPage => SelectedSettingsPage == SettingsPage.AppInsights;
+
+    public bool IsHeldBackPage => SelectedSettingsPage == SettingsPage.HeldBack;
+
+    public bool IsAgentsPage => SelectedSettingsPage == SettingsPage.Agents;
+
+    public bool IsUpdatesPage => SelectedSettingsPage == SettingsPage.Updates;
+
+    public bool IsGeneralPage => SelectedSettingsPage == SettingsPage.General;
 
     // Pipeline picker
     public ObservableCollection<SelectablePipeline> AvailablePipelines { get; } = [];
@@ -261,8 +283,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         }
         else
         {
-            ExpandConnectionsNeedingAttention();
-            IsSettingsVisible = true;
+            OpenSettingsOn(PageNeedingAttention());
         }
 
         RefreshConnectionBanner();
@@ -337,9 +358,25 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        OpenSettingsOn(PageNeedingAttention());
+    }
+
+    /// <summary>Switches sections without disturbing the edits already in the panel.</summary>
+    [RelayCommand]
+    private void ShowSettingsPage(SettingsPage page) => SelectedSettingsPage = page;
+
+    /// <summary>
+    /// Shows one section of settings, opening the panel if it is closed. The fingerprint is taken
+    /// on the way in and only then: retaking it on an already-open panel would swallow an edit
+    /// made before the jump, and the reconnect with it.
+    /// </summary>
+    private void OpenSettingsOn(SettingsPage page)
+    {
+        SelectedSettingsPage = page;
+        if (IsSettingsVisible) return;
+
         IsSettingsVisible = true;
         _settingsOnOpen = ConnectionFingerprint();
-        ExpandConnectionsNeedingAttention();
         _ = LoadPipelinesAsync();
         _ = LoadSentryProjectsAsync();
     }
@@ -393,15 +430,15 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Opens the connections the user has to act on and collapses the rest, so a healthy setup
-    /// shows one line per source instead of three screens of setup instructions.
+    /// The section to land on: whichever source is asking for something, else the first one.
     /// </summary>
-    private void ExpandConnectionsNeedingAttention()
-    {
-        IsAdoExpanded = AdoStatus.NeedsAttention;
-        IsSentryExpanded = SentryStatus.NeedsAttention;
-        IsAppInsightsExpanded = AppInsightsStatus.NeedsAttention;
-    }
+    private SettingsPage PageNeedingAttention() =>
+        Connections.FirstOrDefault(c => c.NeedsAttention)?.Kind switch
+        {
+            ConnectionKind.Sentry => SettingsPage.Sentry,
+            ConnectionKind.AppInsights => SettingsPage.AppInsights,
+            _ => SettingsPage.AzureDevOps,
+        };
 
     /// <summary>
     /// Collapses every unhealthy connection into the single banner slot. Naming at most two keeps
@@ -1936,31 +1973,12 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             IsConnected = false;
         });
 
-    /// <summary>Expands the held-back list, for the link that jumps straight to it.</summary>
-    [ObservableProperty]
-    private bool _isSuppressedExpanded;
-
-    /// <summary>
-    /// Opens settings on the held-back list. Without a way in from the findings themselves the
-    /// list is two expanders deep, which is the same as not being there.
-    /// </summary>
+    /// <summary>Opens settings on the held-back list, for the link on the findings themselves.</summary>
     [RelayCommand]
-    private void ShowSuppressed()
-    {
-        IsSettingsVisible = true;
-        IsAppInsightsExpanded = true;
-        IsSuppressedExpanded = true;
-    }
+    private void ShowSuppressed() => OpenSettingsOn(SettingsPage.HeldBack);
 
     [RelayCommand]
-    private void OpenSettings()
-    {
-        IsSettingsVisible = true;
-        _settingsOnOpen = ConnectionFingerprint();
-        ExpandConnectionsNeedingAttention();
-        _ = LoadPipelinesAsync();
-        _ = LoadSentryProjectsAsync();
-    }
+    private void OpenSettings() => OpenSettingsOn(PageNeedingAttention());
 
     [RelayCommand]
     private void OpenSentryTokenPage()
@@ -1969,7 +1987,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         OpenUrl(_settings.GetSentryTokenPageUrl(), SentryStatus);
     }
 
-[RelayCommand]
+    [RelayCommand]
     private void RestartNow() => UpdateService.Instance.ApplyAndRestart();
 
     private void UnsubscribePollerEvents()
