@@ -50,6 +50,29 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     public ObservableCollection<SourceSummary> CrashSummaries { get; } = [];
 
     public ObservableCollection<ServiceFinding> ServiceActions { get; } = [];
+
+    /// <summary>
+    /// What the rules kept off the board, so a filter cannot hide something without saying so.
+    /// </summary>
+    public ObservableCollection<IgnoredSubject> SuppressedSubjects { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSuppressed))]
+    [NotifyPropertyChangedFor(nameof(SuppressedLink))]
+    private int _suppressedCount;
+
+    public bool HasSuppressed => SuppressedCount > 0;
+
+    public string SuppressedLink => $"{SuppressedCount:N0} held back →";
+
+    [ObservableProperty]
+    private string _suppressedSummary = "Nothing checked yet.";
+
+    /// <summary>The patterns the user has added, shown so they can be taken away again.</summary>
+    public ObservableCollection<string> IgnoredPatterns { get; } = [];
+
+    /// <summary>Subjects promoted past every suppression rule.</summary>
+    public ObservableCollection<string> AlwaysShownSubjects { get; } = [];
     public ObservableCollection<SourceSummary> ServiceSummaries { get; } = [];
 
     [ObservableProperty] private bool _showMutedCrashes;
@@ -181,6 +204,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// <summary>Application Insights publishes on its own cadence, so it keeps its own result.</summary>
     private List<ServiceFinding> _lastFindings = [];
 
+    /// <summary>What the last poll held back, for the settings view and the agent snapshot.</summary>
+    private List<IgnoredSubject> _lastSuppressed = [];
+
     /// <summary>Watches for an agent asking Huginn to poll now.</summary>
     private FileSystemWatcher? _refreshRequests;
 
@@ -206,6 +232,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         UpdateService.Instance.StartPolling();
 
         WatchForRefreshRequests();
+        RefreshIgnoredPatterns();
+        RefreshAlwaysShown();
         _ = RefreshAgentRegistrationAsync();
 
         Connections.Add(AdoStatus);
@@ -763,6 +791,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             ],
             _lastSentryIssues,
             _lastFindings,
+            _lastSuppressed,
             _settings.GetWebBaseUrl()));
     }
 
@@ -820,6 +849,109 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         RebuildServiceGroups();
     }
+
+    /// <summary>What the user is typing into the add-a-pattern box.</summary>
+    [ObservableProperty]
+    private string _newIgnorePattern = "";
+
+    private void RefreshIgnoredPatterns() => Sync(IgnoredPatterns, _settings.IgnoredSubjects);
+
+    /// <summary>
+    /// Promotes something out of the held-back list. This is the action that makes the list worth
+    /// showing: seeing a route of yours in there is only useful if you can do something about it.
+    /// </summary>
+    [RelayCommand]
+    private void AlwaysShow(IgnoredSubject? entry)
+    {
+        if (entry == null || _settings.AlwaysShownSubjects.Contains(entry.Subject)) return;
+
+        _settings.AlwaysShownSubjects.Add(entry.Subject);
+
+        // A promoted subject must not still be matched by a pattern, or nothing would change.
+        _settings.IgnoredSubjects.RemoveAll(p => Glob.Matches(p, entry.Subject));
+        _settings.Save();
+
+        RefreshIgnoredPatterns();
+        RefreshAlwaysShown();
+        SuppressedSummary = $"\"{entry.Subject}\" will be reported from the next check.";
+    }
+
+    /// <summary>Turns a held-back entry into a rule of its own, so it stays gone.</summary>
+    [RelayCommand]
+    private void NeverShow(IgnoredSubject? entry)
+    {
+        if (entry == null || _settings.IgnoredSubjects.Contains(entry.Subject)) return;
+
+        _settings.IgnoredSubjects.Add(entry.Subject);
+        _settings.AlwaysShownSubjects.Remove(entry.Subject);
+        _settings.Save();
+
+        RefreshIgnoredPatterns();
+        RefreshAlwaysShown();
+    }
+
+    [RelayCommand]
+    private void StopAlwaysShowing(string? subject)
+    {
+        if (subject == null || !_settings.AlwaysShownSubjects.Remove(subject)) return;
+
+        _settings.Save();
+        RefreshAlwaysShown();
+    }
+
+    private void RefreshAlwaysShown() => Sync(AlwaysShownSubjects, _settings.AlwaysShownSubjects);
+
+    [RelayCommand]
+    private void AddIgnorePattern()
+    {
+        string pattern = NewIgnorePattern.Trim();
+        if (pattern.Length == 0 || _settings.IgnoredSubjects.Contains(pattern)) return;
+
+        _settings.IgnoredSubjects.Add(pattern);
+        _settings.Save();
+        NewIgnorePattern = "";
+
+        RefreshIgnoredPatterns();
+        RefreshAlwaysShown();
+        _lastFindings.RemoveAll(f => Glob.Matches(pattern, f.Subject));
+        RebuildServiceGroups();
+    }
+
+    [RelayCommand]
+    private void RemoveIgnorePattern(string? pattern)
+    {
+        if (pattern == null || !_settings.IgnoredSubjects.Remove(pattern)) return;
+
+        _settings.Save();
+        RefreshIgnoredPatterns();
+
+        // What it was hiding only comes back on the next poll, so say so rather than
+        // leaving the list looking unchanged.
+        SuppressedSummary = $"Removed \"{pattern}\". Anything it was hiding returns on the next check.";
+    }
+
+    /// <summary>
+    /// Stops a subject ever becoming a finding again. Broader than muting, which is for something
+    /// of yours that you have accepted: this is for traffic that is not yours at all.
+    /// </summary>
+    [RelayCommand]
+    private void IgnoreServiceFinding(ServiceFinding? finding)
+    {
+        if (finding == null) return;
+        if (_settings.IgnoredSubjects.Contains(finding.Subject)) return;
+
+        _settings.IgnoredSubjects.Add(finding.Subject);
+        _settings.Save();
+        RefreshIgnoredPatterns();
+
+        // Drop it now rather than leaving it on screen until the next poll.
+        _lastFindings.RemoveAll(f => f.Subject == finding.Subject);
+        RebuildServiceGroups();
+    }
+
+    [RelayCommand]
+    private Task CopyFindingQueryAsync(ServiceFinding? finding) =>
+        finding == null ? Task.CompletedTask : CopyTextAsync(finding.EvidenceQuery);
 
     [RelayCommand]
     private void DismissServiceFinding(ServiceFinding? finding)
@@ -1602,6 +1734,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.SentryFailed += OnSentryFailed;
         _poller.SentryPolled += OnSentryPolled;
         _poller.AppInsightsPolled += OnAppInsightsPolled;
+        _poller.AppInsightsSuppressed += OnAppInsightsSuppressed;
         _poller.AppInsightsFailed += OnAppInsightsFailed;
         _poller.NewServiceFindingsDetected += OnNewServiceFindingsDetected;
         _poller.StatusChanged += OnStatusChanged;
@@ -1745,6 +1878,22 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                     : $"{AppInsightsAccount}, {active} finding{(active == 1 ? "" : "s")}");
         });
 
+    private void OnAppInsightsSuppressed(List<IgnoredSubject> suppressed)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            _lastSuppressed = suppressed;
+            SuppressedCount = suppressed.Count;
+
+            Sync(SuppressedSubjects, suppressed
+                .OrderByDescending(i => i.Calls)
+                .Take(50));
+
+            SuppressedSummary = suppressed.Count == 0
+                ? "Nothing was held back on the last check."
+                : $"{suppressed.Count:N0} operations held back, "
+                  + $"{suppressed.Sum(i => i.Calls):N0} calls. Listed worst first.";
+        });
+
     private void OnAppInsightsFailed(string msg)
         => Dispatcher.UIThread.Post(() => AppInsightsStatus.Set(
             msg.Contains("signed in", StringComparison.OrdinalIgnoreCase)
@@ -1787,6 +1936,22 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             IsConnected = false;
         });
 
+    /// <summary>Expands the held-back list, for the link that jumps straight to it.</summary>
+    [ObservableProperty]
+    private bool _isSuppressedExpanded;
+
+    /// <summary>
+    /// Opens settings on the held-back list. Without a way in from the findings themselves the
+    /// list is two expanders deep, which is the same as not being there.
+    /// </summary>
+    [RelayCommand]
+    private void ShowSuppressed()
+    {
+        IsSettingsVisible = true;
+        IsAppInsightsExpanded = true;
+        IsSuppressedExpanded = true;
+    }
+
     [RelayCommand]
     private void OpenSettings()
     {
@@ -1817,6 +1982,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.SentryFailed -= OnSentryFailed;
         _poller.SentryPolled -= OnSentryPolled;
         _poller.AppInsightsPolled -= OnAppInsightsPolled;
+        _poller.AppInsightsSuppressed -= OnAppInsightsSuppressed;
         _poller.AppInsightsFailed -= OnAppInsightsFailed;
         _poller.NewServiceFindingsDetected -= OnNewServiceFindingsDetected;
         _poller.StatusChanged -= OnStatusChanged;

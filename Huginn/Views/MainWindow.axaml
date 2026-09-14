@@ -384,6 +384,76 @@
                             </StackPanel>
                         </Expander>
 
+                        <Expander Header="What is being held back" HorizontalAlignment="Stretch"
+                                  IsExpanded="{Binding IsSuppressedExpanded}"
+                                  HorizontalContentAlignment="Stretch" Margin="0,4,0,0">
+                            <StackPanel Spacing="8" Margin="0,8,0,0">
+                                <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                                           Text="An internet-facing resource is scanned constantly, and scanning means asking for paths that do not exist. Huginn holds those back so they cannot bury a real failure, and lists them here so nothing is hidden without you being able to see it."/>
+
+                                <TextBlock Text="{Binding SuppressedSummary}" FontSize="12"
+                                           FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+                                <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="4" MaxHeight="200"
+                                        IsVisible="{Binding SuppressedSubjects.Count}">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsControl ItemsSource="{Binding SuppressedSubjects}" Margin="8">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="models:IgnoredSubject">
+                                                    <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                                            <TextBlock Text="{Binding Subject}" FontSize="11"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding Pattern}" FontSize="10"
+                                                                       Opacity="0.5" TextTrimming="CharacterEllipsis"/>
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="1" FontSize="11" Opacity="0.7"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Calls, StringFormat={}{0:N0} calls}"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Border>
+
+                                <TextBlock FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                                           Text="If something of yours is in this list, it is a real failure being missed. Raise it with whoever owns the route rather than adding a rule."/>
+
+                                <Separator Margin="0,4"/>
+
+                                <TextBlock Text="Never show these" FontSize="12" FontWeight="SemiBold"/>
+                                <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                                           Text="Patterns matched against the route or dependency name. * stands for any run of characters. Different from muting, which is for something of yours you have chosen to live with."/>
+
+                                <ItemsControl ItemsSource="{Binding IgnoredPatterns}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                                <TextBlock Grid.Column="0" Text="{Binding}" FontSize="11"
+                                                           VerticalAlignment="Center"
+                                                           FontFamily="Consolas,Menlo,monospace"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <Button Grid.Column="1" Content="✕" FontSize="11" Padding="6,1"
+                                                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveIgnorePatternCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        ToolTip.Tip="Stop hiding anything matching this"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                    <TextBox Grid.Column="0" Margin="0,0,6,0"
+                                             Text="{Binding NewIgnorePattern}"
+                                             PlaceholderText="e.g. */admin/*"/>
+                                    <Button Grid.Column="1" Content="Add"
+                                            Command="{Binding AddIgnorePatternCommand}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+
                         <Expander Header="Advanced" HorizontalAlignment="Stretch"
                                   HorizontalContentAlignment="Stretch" Margin="0,4,0,0">
                             <StackPanel Spacing="8" Margin="0,8,0,0">
@@ -824,7 +894,10 @@
                                             <views:ServiceFindingCardView DataContext="{Binding}"
                                                                           MuteCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleServiceFindingMutedCommand}"
                                                                           OpenCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenServiceFindingCommand}"
-                                                                          DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissServiceFindingCommand}"/>
+                                                                          DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissServiceFindingCommand}"
+                                                                          IgnoreCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IgnoreServiceFindingCommand}"
+                                                                          CopyQueryCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyFindingQueryCommand}"
+                                                                          ShowSuppressedCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowSuppressedCommand}"/>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
@@ -869,9 +942,26 @@
                             </ItemsControl>
                         </StackPanel>
 
-                        <TextBlock Grid.Row="3" FontSize="10" Opacity="0.45"
-                                   Margin="8,4,8,6" TextTrimming="CharacterEllipsis"
-                                   Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ServicePaneStatus}"/>
+                        <StackPanel Grid.Row="3" Margin="8,4,8,6" Spacing="2">
+                            <TextBlock FontSize="10" Opacity="0.45" TextTrimming="CharacterEllipsis"
+                                       Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ServicePaneStatus}"/>
+
+                            <!--
+                                The way in to what is hidden. It belongs on the pane rather than
+                                only on a card, because the case that matters most is an empty
+                                pane: there is no card to reach a menu from, and "nothing wrong"
+                                and "everything filtered" look identical.
+                            -->
+                            <Button Padding="0" Background="Transparent" BorderThickness="0"
+                                    Cursor="Hand" HorizontalAlignment="Left"
+                                    IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).HasSuppressed}"
+                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowSuppressedCommand}"
+                                    ToolTip.Tip="See what the rules are keeping off this pane">
+                                <TextBlock FontSize="10" Foreground="#FF7FB2E5"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SuppressedLink}"/>
+                            </Button>
+                        </StackPanel>
                     </Grid>
                 </Border>
         </UniformGrid>

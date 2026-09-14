@@ -138,6 +138,9 @@ public sealed class PollingService : IDisposable
     public event Action<string>? AppInsightsFailed;
     public event Action<List<ServiceFinding>>? AppInsightsPolled;
 
+    /// <summary>What the rules held back on the last poll, for the settings view to show.</summary>
+    public event Action<List<IgnoredSubject>>? AppInsightsSuppressed;
+
     /// <summary>Refreshes every source, for the Refresh button.</summary>
     public Task PollNowAsync(CancellationToken ct = default) => PollNowAsync(force: true, ct);
 
@@ -205,6 +208,7 @@ public sealed class PollingService : IDisposable
             var snapshot = await _appInsightsMonitor.PollAsync(client, components, _settings, ct);
 
             AppInsightsPolled?.Invoke(snapshot.Findings);
+            AppInsightsSuppressed?.Invoke(snapshot.Ignored);
             _appInsightsLastPolled = DateTimeOffset.UtcNow;
 
             if (snapshot.NewFindings.Count > 0)
