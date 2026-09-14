@@ -47,6 +47,15 @@ public sealed partial class ServiceFinding : ObservableObject
     /// </summary>
     public double Magnitude { get; init; }
 
+    /// <summary>How much traffic this is about, for weighing what an ignore rule would hide.</summary>
+    public long Calls { get; init; }
+
+    /// <summary>The window the rule looked at, so the finding can reproduce itself.</summary>
+    public int WindowMinutes { get; init; }
+
+    /// <summary>The query that would show exactly what Huginn saw.</summary>
+    public string EvidenceQuery => FindingQuery.Evidence(this);
+
     /// <summary>
     /// Stable across polls so a finding can be muted or dismissed and still be recognised next
     /// time. Deliberately excludes the measurement, which moves every poll.

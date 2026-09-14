@@ -128,6 +128,54 @@ public sealed partial class AppSettings
     /// </summary>
     public Dictionary<string, string> WatchedAppInsights { get; set; } = [];
 
+    /// <summary>
+    /// Operations and dependency targets that never become findings, as wildcard patterns.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from muting, which hides one finding that is genuinely yours. This is for traffic
+    /// that is not yours at all: an internet-facing resource is probed constantly, and the probes
+    /// are endlessly novel, so silencing them one at a time never finishes.
+    /// </remarks>
+    public List<string> IgnoredSubjects { get; set; } = [.. DefaultIgnoredSubjects];
+
+    /// <summary>
+    /// Subjects that are reported however quiet they are, overriding every suppression rule.
+    /// </summary>
+    /// <remarks>
+    /// The rule that holds back quiet 404s cannot tell a scanner from a route of ours that is
+    /// rarely called and broken. This is how the user settles that case once, having seen it in
+    /// the held-back list, instead of the rule deciding on their behalf forever.
+    /// </remarks>
+    public List<string> AlwaysShownSubjects { get; set; } = [];
+
+    /// <summary>Whether a subject has been promoted past the suppression rules.</summary>
+    public bool IsAlwaysShown(string subject) =>
+        AlwaysShownSubjects.Any(p => Glob.Matches(p, subject));
+
+    /// <summary>
+    /// The probe families an internet-facing resource sees constantly. Kept to shapes that are
+    /// unmistakably nobody's application, because every entry here is Huginn deciding something
+    /// does not matter on the user's behalf, and that is how a real failure stays hidden. The
+    /// settings view shows what each rule is currently suppressing, so an over-broad one is
+    /// visible rather than silent.
+    /// </summary>
+    public static readonly string[] DefaultIgnoredSubjects =
+    [
+        "*.php",
+        "*/wp-admin/*",
+        "*/wp-json/*",
+        "*phpmyadmin*",
+        "*/etc/passwd",
+        "*/manager/html",
+        "*/jmx-console/*",
+        "*/realms/master/*",
+        "*/api/v1/database/*",
+        "*/.env",
+        "*/.git/*",
+        "*/actuator/*",
+        "*/cgi-bin/*",
+    ];
+
     /// <summary>Resource name for a watched entry, whichever form the value takes.</summary>
     public static string NameOf(string value) =>
         value.StartsWith('/') ? value[(value.LastIndexOf('/') + 1)..] : value;
@@ -414,6 +462,8 @@ public sealed partial class AppSettings
             AppInsightsTenantId = AppInsightsTenantId,
             AppInsightsClientId = AppInsightsClientId,
             WatchedAppInsights = WatchedAppInsights,
+            IgnoredSubjects = IgnoredSubjects,
+            AlwaysShownSubjects = AlwaysShownSubjects,
             WindowX = WindowX,
             WindowY = WindowY,
             WindowWidth = WindowWidth,
@@ -464,6 +514,8 @@ public sealed partial class AppSettings
                 AppInsightsTenantId = dto.AppInsightsTenantId ?? "",
                 AppInsightsClientId = dto.AppInsightsClientId ?? "",
                 WatchedAppInsights = dto.WatchedAppInsights ?? [],
+                IgnoredSubjects = dto.IgnoredSubjects ?? [.. DefaultIgnoredSubjects],
+                AlwaysShownSubjects = dto.AlwaysShownSubjects ?? [],
                 WindowX = dto.WindowX,
                 WindowY = dto.WindowY,
                 WindowWidth = dto.WindowWidth,
@@ -505,6 +557,8 @@ public sealed partial class AppSettings
         public string? AppInsightsTenantId { get; set; }
         public string? AppInsightsClientId { get; set; }
         public Dictionary<string, string>? WatchedAppInsights { get; set; }
+        public List<string>? IgnoredSubjects { get; set; }
+        public List<string>? AlwaysShownSubjects { get; set; }
         public double? WindowX { get; set; }
         public double? WindowY { get; set; }
         public double? WindowWidth { get; set; }

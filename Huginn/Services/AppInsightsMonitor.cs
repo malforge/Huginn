@@ -22,6 +22,25 @@ public sealed class AppInsightsMonitor
     /// <summary>Calls a route needs in the window before its rates mean anything.</summary>
     private const int MinimumCalls = 10;
 
+    /// <summary>
+    /// Calls a route answering mostly 404 needs before it becomes a finding, rather than the
+    /// ordinary <see cref="MinimumCalls"/>.
+    /// </summary>
+    /// <remarks>
+    /// An internet-facing resource is scanned continuously, and scanning is exactly the act of
+    /// requesting paths that do not exist: one measured window held 2811 distinct 404 operations
+    /// averaging four calls each. Probing is unbounded and endlessly novel, so no list of it can
+    /// be kept current, but it is uniformly quiet per path. A route of our own that is broken is
+    /// the opposite shape: one path, called as often as the app calls it.
+    ///
+    /// The cost is that a rarely-called route of ours answering 404 stays quiet. The settings
+    /// view lists what this suppressed, so that is one glance away rather than invisible.
+    /// </remarks>
+    private const int MinimumCallsWhenMostly404 = 200;
+
+    /// <summary>Share of a route's failures that must be 404 before it counts as probe-shaped.</summary>
+    private const double Mostly404 = 0.9;
+
     /// <summary>Distinct failing result codes named on a card before it stops being readable.</summary>
     private const int MaxCodesPerRoute = 3;
 
@@ -40,7 +59,10 @@ public sealed class AppInsightsMonitor
     private readonly HashSet<string> _known = [];
     private bool _hasBaseline;
 
-    public record Snapshot(List<ServiceFinding> Findings, List<ServiceFinding> NewFindings);
+    public record Snapshot(
+        List<ServiceFinding> Findings,
+        List<ServiceFinding> NewFindings,
+        List<IgnoredSubject> Ignored);
 
     public async Task<Snapshot> PollAsync(
         AppInsightsApiClient client,
@@ -50,12 +72,18 @@ public sealed class AppInsightsMonitor
     {
         List<ServiceFinding> findings = [];
 
+        // What the rules held back, so the settings view can show it. A filter that cannot be
+        // audited is how a real failure stays hidden, which is the whole reason the blanket 404
+        // exclusion went unnoticed for as long as it did.
+        List<IgnoredSubject> suppressed = [];
+
         foreach (AppInsightsComponent component in components)
         {
             try
             {
                 findings.AddRange(await ExamineAsync(
-                    client, component, Math.Max(5, settings.AppInsightsWindowMinutes), ct));
+                    client, component, Math.Max(5, settings.AppInsightsWindowMinutes),
+                    settings, suppressed, ct));
             }
             catch (OperationCanceledException)
             {
@@ -67,6 +95,26 @@ public sealed class AppInsightsMonitor
                 Log.Error($"Could not examine {component.Name}: {ex.GetType().Name}: {ex.Message}");
                 Log.Error(ex.ToString());
             }
+        }
+
+        // Traffic that is not ours at all never becomes a finding, so it cannot distort a
+        // failure rate either. What was dropped is reported rather than silently discarded: a
+        // filter nobody can audit is how a real failure stays hidden.
+        List<IgnoredSubject> ignored = [.. suppressed];
+
+        for (int i = findings.Count - 1; i >= 0; i--)
+        {
+            ServiceFinding finding = findings[i];
+            if (settings.IsAlwaysShown(finding.Subject)) continue;
+
+            string? pattern = settings.IgnoredSubjects
+                .FirstOrDefault(p => Glob.Matches(p, finding.Subject));
+
+            if (pattern == null) continue;
+
+            ignored.Add(new IgnoredSubject(
+                finding.Subject, finding.ResourceName, pattern, finding.Calls));
+            findings.RemoveAt(i);
         }
 
         // Unlike a Sentry backlog, a finding describes what is wrong right now. There is no
@@ -100,25 +148,26 @@ public sealed class AppInsightsMonitor
             return severity != 0 ? severity : b.Magnitude.CompareTo(a.Magnitude);
         });
 
-        return new Snapshot(findings, raised);
+        return new Snapshot(findings, raised, ignored);
     }
 
     private static async Task<List<ServiceFinding>> ExamineAsync(
         AppInsightsApiClient client, AppInsightsComponent component, int windowMinutes,
-        CancellationToken ct)
+        AppSettings settings, List<IgnoredSubject> suppressed, CancellationToken ct)
     {
         List<ServiceFinding> findings = [];
         string window = $"{windowMinutes}m";
 
-        // Requests that 404 are excluded wholesale. On an internet-facing resource they are
-        // overwhelmingly bots probing for /wp-admin and friends, which would otherwise drown out
-        // every real signal; a 404 from our own client is a client bug rather than an outage.
+        // 404s are counted like any other failure. They used to be excluded wholesale as probe
+        // traffic, which hid a route of our own being called thousands of times an hour and
+        // answering 404 every time. Probes are dealt with by the ignore list instead, which the
+        // user can see and change.
         QueryTable routes = await client.QueryAsync(component.AppId, $"""
             requests
             | where timestamp > ago({window})
-            | where toint(resultCode) != 404
             | summarize total = sum(itemCount),
                         failed = sumif(itemCount, success == false),
+                        notFound = sumif(itemCount, toint(resultCode) == 404),
                         p95 = round(percentile(duration, 95)),
                         codes = strcat_array(make_set_if(resultCode, success == false, {MaxCodesPerRoute}), ", ")
                       by name
@@ -130,6 +179,7 @@ public sealed class AppInsightsMonitor
         int failedAt = routes.IndexOf("failed");
             int p95At = routes.IndexOf("p95");
         int codesAt = routes.IndexOf("codes");
+        int notFoundAt = routes.IndexOf("notFound");
 
         long traffic = 0;
 
@@ -141,8 +191,25 @@ public sealed class AppInsightsMonitor
             double p95 = Number(row, p95At);
             traffic += total;
 
+            long notFound = Number(row, notFoundAt);
+
+            // Scanner traffic is quiet per path and unbounded in variety, so it is held back by
+            // volume rather than by a list of paths nobody could keep current.
+            bool probeShaped = failed > 0
+                               && (double)notFound / failed >= Mostly404
+                               && total < MinimumCallsWhenMostly404
+                               && !settings.IsAlwaysShown(name);
+
             double rate = total == 0 ? 0 : (double)failed / total;
-            if (rate >= FailureRateThreshold)
+
+            if (rate >= FailureRateThreshold && probeShaped)
+            {
+                suppressed.Add(new IgnoredSubject(
+                    name, component.Name,
+                    $"mostly 404 and under {MinimumCallsWhenMostly404} calls", total));
+            }
+
+            if (rate >= FailureRateThreshold && !probeShaped)
             {
                 findings.Add(new ServiceFinding
                 {
@@ -153,6 +220,8 @@ public sealed class AppInsightsMonitor
                     Subject = name,
                     Detail = $"{rate:P0} of {total:N0} calls failed{Codes(Text(row, codesAt))}",
                     Magnitude = rate * 100,
+                    Calls = total,
+                    WindowMinutes = windowMinutes,
                 });
             }
 
@@ -167,6 +236,8 @@ public sealed class AppInsightsMonitor
                     Subject = name,
                     Detail = $"p95 {p95 / 1000:N1}s over {total:N0} calls",
                     Magnitude = p95,
+                    Calls = total,
+                    WindowMinutes = windowMinutes,
                 });
             }
         }
@@ -199,6 +270,8 @@ public sealed class AppInsightsMonitor
                 Subject = $"{Text(row, typeAt)} {target}".Trim(),
                 Detail = $"{failed:N0} failures{Codes(Text(row, codeAt))}",
                 Magnitude = failed,
+                Calls = failed,
+                WindowMinutes = windowMinutes,
             });
         }
 
@@ -216,6 +289,7 @@ public sealed class AppInsightsMonitor
                 Subject = component.Name,
                 Detail = $"no requests in the last {Describe(windowMinutes)}",
                 Magnitude = 1,
+                WindowMinutes = windowMinutes,
             });
         }
 
@@ -260,7 +334,6 @@ public sealed class AppInsightsMonitor
             QueryTable series = await client.QueryAsync(component.AppId, $"""
                 requests
                 | where timestamp > ago({window})
-                | where toint(resultCode) != 404
                 | summarize p95 = round(percentile(duration, 95)),
                             failed = sumif(itemCount, success == false),
                             total = sum(itemCount)
