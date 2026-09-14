@@ -1,3 +1,16 @@
+v.1.3.0
+   - New: Sentry monitoring. Huginn watches the projects you pick and raises crashes two ways. A crash that is new, has come back after being resolved, or has outgrown a mute is raised because it changed. A crash reaching at least five people and five per cent of everyone affected in the window is raised because it is big, however long it has been there. Each card carries a sparkline of the last twenty-four hours and a phrase for its shape, so a constant drip is told apart from a single burst at a glance.
+   - New: Application Insights monitoring. Sign in with your own Azure account and pick the resources you can already see. Huginn reports routes that are failing, routes that are slow at the ninety-fifth percentile, failing dependencies, and resources that have gone silent, ordered by severity rather than by raw magnitude, so routes failing every call no longer sit below merely slow ones. Failing routes name the result code, because whether it is a 500 or a 405 decides what you do next.
+   - New: connections are a first-class concept. Azure DevOps, Sentry and Application Insights each hold their own sign-in, their own list of what to watch, and their own status, and each keeps working while the others are broken. Every pane says when it was last checked, and a pane whose source cannot answer says so rather than looking calm.
+   - The dashboard is built around what needs acting on now. Pull requests and builds share a column, since neither runs to many rows, leaving crashes and services a full column each. Card actions are icons with tooltips instead of words, which is what gives the titles room to be read.
+   - Notifications are summarised per poll. A check that turns up ten new items used to fire ten separate toasts; it now fires one that names the count and what is in it. A single item still gets the detailed notification it always did.
+   - New: Huginn can answer an AI coding agent asking what is currently broken. Settings has an Agents section that registers it with Claude Code in one press, and prints the command and configuration for any other MCP client. Reading needs no extra sign-in and opens no network port.
+   - Settings written by a different version of Huginn are no longer discarded. Saving used to drop anything the running build did not recognise.
+   - Settings are saved when you close the panel or the window, rather than only on an explicit save, so an edit interrupted by a restart is no longer thrown away.
+   - Set HUGINN_PROFILE to give a build its own settings, credentials and state, so a second copy on the same machine shares nothing with the first.
+   - Fixed: long pull request titles drew over the buttons beside them, and long build names were cut off mid-character instead of trimming.
+   - Upgraded Avalonia to 12.1.2.
+
 v.1.2.0
    - Bumped System.Drawing.Common from the transitive 4.7.0 to 9.0.0, clearing the GHSA-rxg9-xrhp-64gj critical-severity advisory that the release builds were flagging.
    - Rooted the Windows toast-notification dependency chain (Microsoft.Toolkit.Uwp.Notifications, Microsoft.Windows.SDK.NET, WinRT.Runtime) so the trimmer no longer strips reflection-only members on best-guess heuristics. The current call sites worked in practice, but any new toast template or WinRT activation path is now safe by construction rather than by luck.
