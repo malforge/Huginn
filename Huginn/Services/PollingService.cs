@@ -88,7 +88,6 @@ public sealed class PollingService : IDisposable
 
         ConnectSentry();
 
-        _buildMonitor.SetInitialLookback(TimeSpan.FromHours(2));
         _cts = new CancellationTokenSource();
 
         // Each source keeps its own cadence: they are independent, and forcing the slow one to

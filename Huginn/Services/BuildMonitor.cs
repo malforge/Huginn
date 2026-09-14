@@ -15,7 +15,13 @@ public sealed class BuildMonitor
 {
     private readonly HashSet<int> _knownFailedBuildIds = [];
     private bool _hasBaseline;
-    private DateTime _lastPollTime = DateTime.UtcNow;
+
+    /// <summary>
+    /// How far back one of your own build failures is asked for. A fixed window rather than the
+    /// time of the last poll: asking only for what has happened since then returns each failure
+    /// exactly once, so it appears for one interval and then disappears on its own.
+    /// </summary>
+    private static readonly TimeSpan MyFailureWindow = TimeSpan.FromHours(24);
 
     public record BuildSnapshot(
         List<BuildItem> MyFailedBuilds,
@@ -29,7 +35,10 @@ public sealed class BuildMonitor
         var watchedFailures = new List<BuildItem>();
 
         if (settings.MonitorMyBuilds)
-            myFailed = await client.GetMyRecentFailedBuildsAsync(userId, _lastPollTime, ct);
+        {
+            myFailed = await client.GetMyRecentFailedBuildsAsync(
+                userId, DateTime.UtcNow - MyFailureWindow, ct);
+        }
 
         if (settings.WatchedPipelineIds.Count > 0)
         {
@@ -66,8 +75,6 @@ public sealed class BuildMonitor
                 _knownFailedBuildIds.Add(build.Id);
             _hasBaseline = true;
         }
-
-        _lastPollTime = DateTime.UtcNow;
 
         return new BuildSnapshot(myFailed, watchedFailures, newFailures);
     }
@@ -110,12 +117,6 @@ public sealed class BuildMonitor
     {
         _knownFailedBuildIds.Clear();
         _hasBaseline = false;
-        _lastPollTime = DateTime.UtcNow;
-    }
-
-    public void SetInitialLookback(TimeSpan lookback)
-    {
-        _lastPollTime = DateTime.UtcNow - lookback;
     }
 
     public StatusParts GetStatusParts(BuildSnapshot snap)
