@@ -1268,7 +1268,24 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentRegisterLabel))]
+    [NotifyPropertyChangedFor(nameof(AgentNeedsPointing))]
     private bool _agentRegistered;
+
+    /// <summary>The registration names this copy, so there is nothing left to do.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AgentRegisterLabel))]
+    [NotifyPropertyChangedFor(nameof(AgentNeedsPointing))]
+    private bool _agentPointsHere;
+
+    /// <summary>Offered whenever pressing it would change something.</summary>
+    public bool AgentNeedsPointing => !AgentPointsHere;
+
+    /// <summary>
+    /// Registering and re-pointing are the same action, so the label says which one it is about
+    /// to be rather than leaving the reader to work out what pressing it would do.
+    /// </summary>
+    public string AgentRegisterLabel =>
+        AgentRegistered ? "Point at this copy" : "Register with Claude Code";
 
     [ObservableProperty]
     private bool _claudeCodeFound;
@@ -1279,8 +1296,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string _agentRegistrationStatus = "";
 
-    public string AgentRegisterLabel =>
-        AgentRegistered ? "Remove from Claude Code" : "Register with Claude Code";
 
     /// <summary>
     /// Reads the current state rather than assuming it. Someone may have registered or removed it
@@ -1296,25 +1311,54 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (!ClaudeCodeFound) return;
 
-        AgentRegistered = await ClaudeCodeRegistration.IsRegisteredAsync();
-        AgentRegistrationStatus = AgentRegistered
-            ? "Registered. Agents can ask Huginn what is currently broken."
-            : "Not registered yet.";
+        var registration = await ClaudeCodeRegistration.ReadRegistrationAsync();
+
+        AgentRegistered = registration.Registered;
+        AgentPointsHere = registration.PointsHere;
+
+        AgentRegistrationStatus = registration switch
+        {
+            { Registered: false } => "Not registered yet.",
+            { PointsHere: true } => "Registered, pointing at this copy.",
+            { Command.Length: > 0 } r => $"Registered, but pointing at another copy: {r.Command}",
+            _ => "Registered. Claude Code did not say which copy it points at.",
+        };
     }
 
+    /// <summary>Points Claude Code at this copy, whatever it pointed at before.</summary>
     [RelayCommand]
-    private async Task ToggleAgentRegistrationAsync()
+    private async Task RegisterAgentAsync()
     {
         if (AgentBusy) return;
         AgentBusy = true;
         try
         {
-            (bool ok, string message) = AgentRegistered
-                ? await ClaudeCodeRegistration.UnregisterAsync()
-                : await ClaudeCodeRegistration.RegisterAsync();
-
+            (bool ok, string message) = await ClaudeCodeRegistration.RegisterAsync();
             AgentRegistrationStatus = message;
-            if (ok) AgentRegistered = !AgentRegistered;
+            if (!ok) return;
+
+            AgentRegistered = true;
+            AgentPointsHere = true;
+        }
+        finally
+        {
+            AgentBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task UnregisterAgentAsync()
+    {
+        if (AgentBusy) return;
+        AgentBusy = true;
+        try
+        {
+            (bool ok, string message) = await ClaudeCodeRegistration.UnregisterAsync();
+            AgentRegistrationStatus = message;
+            if (!ok) return;
+
+            AgentRegistered = false;
+            AgentPointsHere = false;
         }
         finally
         {

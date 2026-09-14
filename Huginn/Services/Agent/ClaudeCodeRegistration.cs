@@ -84,16 +84,54 @@ public static class ClaudeCodeRegistration
             yield return entry.Trim();
     }
 
-    /// <summary>Whether this machine already has a Huginn server registered.</summary>
-    public static async Task<bool> IsRegisteredAsync(CancellationToken ct = default)
-    {
-        if (FindClaude() is not { } claude) return false;
+    /// <summary>What Claude Code currently has registered under this name.</summary>
+    /// <param name="Registered">Whether an entry exists at all.</param>
+    /// <param name="Command">The executable it points at, empty when that was not reported.</param>
+    /// <param name="PointsHere">The entry names the executable now running.</param>
+    public readonly record struct Registration(bool Registered, string Command, bool PointsHere);
 
-        (int code, _, _) = await RunAsync(claude, ["mcp", "get", ServerName], ct);
-        return code == 0;
+    /// <summary>
+    /// Reads the existing registration, including which executable it names.
+    /// </summary>
+    /// <remarks>
+    /// The command is only reported for some kinds of entry, so an empty
+    /// <see cref="Registration.Command"/> means unknown rather than none, and
+    /// <see cref="Registration.PointsHere"/> is false in that case rather than guessing.
+    /// </remarks>
+    public static async Task<Registration> ReadRegistrationAsync(CancellationToken ct = default)
+    {
+        if (FindClaude() is not { } claude) return new Registration(false, "", false);
+
+        (int code, string output, _) = await RunAsync(claude, ["mcp", "get", ServerName], ct);
+        if (code != 0) return new Registration(false, "", false);
+
+        string command = "";
+        foreach (string line in output.Split('\n'))
+        {
+            string trimmed = line.Trim();
+            if (!trimmed.StartsWith("Command:", StringComparison.OrdinalIgnoreCase)) continue;
+
+            command = trimmed["Command:".Length..].Trim();
+            break;
+        }
+
+        bool here = command.Length > 0
+                    && Environment.ProcessPath is { } running
+                    && string.Equals(
+                        Path.GetFullPath(command), Path.GetFullPath(running),
+                        StringComparison.OrdinalIgnoreCase);
+
+        return new Registration(true, command, here);
     }
 
-    /// <summary>Points Claude Code at the executable currently running.</summary>
+    /// <summary>
+    /// Points Claude Code at the executable currently running, replacing any existing entry.
+    /// </summary>
+    /// <remarks>
+    /// Removes first, because <c>claude mcp get</c> reports only scope and status, never which
+    /// executable is registered. Without that there is no way to tell a stale entry from a current
+    /// one, so the only honest thing the button can offer is to overwrite it with this copy.
+    /// </remarks>
     public static async Task<(bool Ok, string Message)> RegisterAsync(CancellationToken ct = default)
     {
         if (FindClaude() is not { } claude)
@@ -102,15 +140,18 @@ public static class ClaudeCodeRegistration
         if (Environment.ProcessPath is not { } huginn)
             return (false, "Could not work out where this copy of Huginn is running from.");
 
+        // A failure here just means there was nothing registered, which is the common case.
+        await RunAsync(claude, ["mcp", "remove", ServerName], ct);
+
         // The running executable rather than a guessed install path, so a development build
         // registers itself and an installed one registers the installed one.
         (int code, string output, string error) = await RunAsync(
             claude,
-            ["mcp", "add", "-s", Scope, ServerName, "--", huginn, "--mcp"],
+            ["mcp", "add", "-s", Scope, ServerName, "--", huginn, ServeArgument],
             ct);
 
         return code == 0
-            ? (true, $"Registered with Claude Code as \"{ServerName}\".")
+            ? (true, $"Claude Code now points at this copy: {huginn}")
             : (false, Explain(output, error));
     }
 
