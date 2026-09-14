@@ -8,7 +8,22 @@
              x:DataType="models:ServiceFinding"
              x:Name="root">
 
-    <Border Margin="0,2" Padding="10,6" CornerRadius="4"
+    <UserControl.Styles>
+        <!--
+            The open menu says "this one", so the card it belongs to has to say which one it is.
+            The border is always drawn, transparent when closed, so marking it moves nothing.
+        -->
+        <Style Selector="Border.card">
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Border.card.menu-open">
+            <Setter Property="BorderBrush" Value="#FF7FB2E5"/>
+            <Setter Property="Background" Value="#1A7FB2E5"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Border x:Name="Card" Classes="card" Margin="0,2" Padding="10,6" CornerRadius="4"
             Opacity="{Binding CardOpacity}"
             Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
         <Grid ColumnDefinitions="Auto,*,Auto,Auto">
@@ -49,6 +64,29 @@
                         Command="{Binding #root.OpenCommand}"
                         CommandParameter="{Binding}"
                         ToolTip.Tip="Open the blade for this kind of problem in the Azure portal"/>
+
+                <!--
+                    The rarer actions, behind one button. In a menu they get their words back,
+                    which a row of glyphs cannot afford, and the row stops changing width as
+                    actions come and go.
+                -->
+                <Button x:Name="MoreButton" Content="⋯" FontSize="12" Padding="7,3"
+                        ToolTip.Tip="More actions">
+                    <Button.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                            <MenuItem Header="Copy the query behind this"
+                                      Command="{Binding #root.CopyQueryCommand}"
+                                      CommandParameter="{Binding}"/>
+                            <Separator/>
+                            <MenuItem Header="Never show this one again"
+                                      ToolTip.Tip="{Binding Subject}"
+                                      Command="{Binding #root.IgnoreCommand}"
+                                      CommandParameter="{Binding}"/>
+                            <MenuItem Header="What is being held back…"
+                                      Command="{Binding #root.ShowSuppressedCommand}"/>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
             </StackPanel>
         </Grid>
     </Border>
