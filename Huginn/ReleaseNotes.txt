@@ -1,3 +1,11 @@
+v.1.4.0
+   - Settings is now a list of sections down the left and one section at a time on the right, rather than expanders inside expanders. Each connection carries its state in the list, so a source that needs attention is visible without opening anything, and what is being held back has a section of its own instead of sitting two expanders deep.
+   - Routes answering 404 are reported again. Every 404 used to be dropped, which hides a route your client calls and your server does not have. Scanner traffic is held back by its shape instead: many different paths, a handful of calls each, almost all of them not-found. Anything held back is listed, with the rule that hid it and how much of it there was.
+   - New: what is held back can be administered rather than only read. An entry can be promoted so it is always reported, or given a rule of its own so it stays hidden; patterns can be added and removed; and anything promoted is listed so it can be taken back.
+   - New: every card has an overflow menu. Crashes offer the link and the issue id, pull requests the reference form and the title, builds the link and the branch name, and service findings the query behind the finding. A card marks itself while its menu is open, so "this one" is unambiguous in a list of near-identical rows.
+   - Fixed: your own failed builds appeared for one poll and then disappeared on their own. They were only ever asked for as far back as the previous poll, so each failure was returned exactly once and then fell outside the question.
+   - Agents are told what is being held back as well as what was reported.
+
 v.1.3.1
    - Fixed: a source whose status already said "Connected" had the word printed twice when an agent asked for the current status, and a resource with no traffic had its name printed twice.
    - The readme described an Azure DevOps-only tool. It now covers Sentry and Application Insights, with setup for each, and the example MCP client configuration is valid JSON rather than a Windows path with unescaped backslashes.
