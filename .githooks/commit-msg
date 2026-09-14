@@ -1,0 +1,4 @@
+#!/bin/sh
+# The message too. A commit message is as public as the diff and is far easier to write
+# carelessly, because nobody reviews it.
+"$(git rev-parse --show-toplevel)/.githooks/leak-scan.sh" < "$1" || exit 1

@@ -1,0 +1,54 @@
+name: leak-scan
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    name: No internal identifiers
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # The literal deny-list cannot live in the repository, so CI carries it as a secret.
+      # Absent, the built-in shapes still apply; they need no list.
+      - name: Restore the deny-list
+        env:
+          LEAK_TERMS: ${{ secrets.LEAK_TERMS }}
+        run: |
+          if [ -n "$LEAK_TERMS" ]; then
+            echo "$LEAK_TERMS" > "$(git rev-parse --git-dir)/leak-terms.txt"
+            echo "deny-list restored"
+          else
+            echo "no LEAK_TERMS secret configured; built-in shapes only"
+          fi
+
+      - name: Scan the pushed commits
+        env:
+          BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          chmod +x .githooks/leak-scan.sh
+
+          range="$HEAD_SHA~1..$HEAD_SHA"
+          if git rev-parse --verify --quiet "$BEFORE^{commit}" >/dev/null; then
+            range="$BEFORE..$HEAD_SHA"
+          fi
+          echo "Scanning $range"
+
+          failed=0
+          for c in $(git rev-list "$range"); do
+            if ! git log -1 --format='%B' "$c" | ./.githooks/leak-scan.sh; then
+              echo "::error::commit message of $c names something internal"
+              failed=1
+            fi
+            if ! git show "$c" -U0 --format= | grep '^+' | grep -v '^+++' | ./.githooks/leak-scan.sh; then
+              echo "::error::content added by $c names something internal"
+              failed=1
+            fi
+          done
+          exit $failed

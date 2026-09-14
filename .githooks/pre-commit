@@ -1,0 +1,9 @@
+#!/bin/sh
+# Everything about to enter history, scanned first.
+#
+# Added lines only. A diff carries removals too, and scanning those would refuse the one
+# commit you most need to make: the one that takes a leaked term back out again.
+git diff --cached -U0 \
+    | grep '^+' \
+    | grep -v '^+++' \
+    | "$(git rev-parse --show-toplevel)/.githooks/leak-scan.sh" || exit 1

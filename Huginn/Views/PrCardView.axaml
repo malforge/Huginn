@@ -12,24 +12,15 @@
             Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="1">
-        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
-            <!-- Title (with Draft tag) -->
-            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8">
-                <Border IsVisible="{Binding IsDraft}"
-                        Background="#33888888" BorderBrush="#88888888" BorderThickness="1"
-                        CornerRadius="3" Padding="6,1" VerticalAlignment="Center">
-                    <TextBlock Text="📝 Draft" FontSize="11" Opacity="0.85"/>
-                </Border>
-                <TextBlock Text="{Binding PullRequestId, StringFormat=#{0}}" FontSize="14"
-                           Opacity="0.5" VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14"
-                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-            </StackPanel>
+        <!--
+            DockPanel rather than a Grid. The docked buttons take the width they need and the
+            filling child is measured against exactly what is left, so a long title trims. A
+            Grid star column does not guarantee that, and the title drew over the buttons.
+        -->
+        <DockPanel LastChildFill="True">
 
-            <!-- Buttons -->
-            <StackPanel Grid.Row="0" Grid.Column="1" Grid.RowSpan="2"
-                        Orientation="Horizontal" Spacing="4"
-                        VerticalAlignment="Center" Margin="12,0,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4"
+                        VerticalAlignment="Top" Margin="12,0,0,0">
                 <Button Classes="card-action"
                         Command="{Binding #root.AcknowledgeCommand}"
                         CommandParameter="{Binding}"
@@ -45,37 +36,62 @@
                           Data="M 2 2 L 10 2 L 10 5 M 2 2 L 2 10 L 5 10 M 5 5 L 13 5 L 13 13 L 5 13 Z"/>
                 </Button>
                 <Button Classes="card-action"
-                        Content="Open in DevOps ↗"
+                        Content="↗"
                         Command="{Binding #root.OpenCommand}"
-                        CommandParameter="{Binding}"/>
+                        CommandParameter="{Binding}"
+                        ToolTip.Tip="Open this pull request in Azure DevOps"/>
             </StackPanel>
 
-            <!-- Repo + Author + Age -->
-            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal"
-                        Margin="0,4,0,0" Spacing="12">
-                <TextBlock FontSize="12" Opacity="0.7">
-                    <Run Text="📦"/>
-                    <Run Text="{Binding RepositoryName}"/>
-                </TextBlock>
-                <TextBlock FontSize="12" Opacity="0.7">
-                    <Run Text="👤"/>
-                    <Run Text="{Binding CreatedByName}"/>
-                </TextBlock>
-                <TextBlock FontSize="12" Opacity="0.7"
-                           Text="{Binding Age}"/>
-            </StackPanel>
+            <StackPanel>
+                <!-- Title, behind the draft tag and the number -->
+                <Grid ColumnDefinitions="Auto,Auto,*">
+                    <Border Grid.Column="0" IsVisible="{Binding IsDraft}"
+                            Background="#33888888" BorderBrush="#88888888" BorderThickness="1"
+                            CornerRadius="3" Padding="6,1" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <TextBlock Text="📝 Draft" FontSize="11" Opacity="0.85"/>
+                    </Border>
+                    <TextBlock Grid.Column="1" Text="{Binding PullRequestId, StringFormat=#{0}}"
+                               FontSize="14" Opacity="0.5" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                </Grid>
 
-            <!-- Vote summary + Pipeline status -->
-            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
-                        Orientation="Horizontal" Spacing="16" Margin="0,4,0,0">
-                <TextBlock Text="{Binding VoteSummary}" FontSize="12" Opacity="0.8"/>
-                <StackPanel Orientation="Horizontal" Spacing="4"
-                            IsVisible="{Binding HasPipelineStatus}">
-                    <TextBlock Text="{Binding PipelineIcon}" FontSize="12"/>
-                    <TextBlock Text="{Binding PipelineLabel}" FontSize="12"
-                               Opacity="0.8"/>
-                </StackPanel>
+                <!-- Repo, author, age -->
+                <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
+                    <TextBlock Grid.Column="0" FontSize="12" Opacity="0.7" Margin="0,0,12,0"
+                               TextTrimming="CharacterEllipsis">
+                        <Run Text="📦"/>
+                        <Run Text="{Binding RepositoryName}"/>
+                    </TextBlock>
+                    <TextBlock Grid.Column="1" FontSize="12" Opacity="0.7" Margin="0,0,12,0"
+                               TextTrimming="CharacterEllipsis">
+                        <Run Text="👤"/>
+                        <Run Text="{Binding CreatedByName}"/>
+                    </TextBlock>
+                    <TextBlock Grid.Column="2" FontSize="12" Opacity="0.7"
+                               Text="{Binding Age}"/>
+                </Grid>
+
+                <!--
+                    Votes, pipeline and the alert note. A Grid rather than a horizontal StackPanel,
+                    which hands every child its full desired width and so never trims.
+                -->
+                <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
+                    <TextBlock Grid.Column="0" Text="{Binding VoteSummary}" FontSize="12" Opacity="0.8"
+                               TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="16,0,0,0"
+                                IsVisible="{Binding HasPipelineStatus}">
+                        <TextBlock Text="{Binding PipelineIcon}" FontSize="12"/>
+                        <TextBlock Text="{Binding PipelineLabel}" FontSize="12" Opacity="0.8"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Margin="16,0,0,0" FontSize="12"
+                               Text="{Binding #root.AlertNote}"
+                               Foreground="{Binding #root.AlertBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               IsVisible="{Binding #root.AlertNote,
+                                           Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                </Grid>
             </StackPanel>
-        </Grid>
+        </DockPanel>
     </Border>
 </UserControl>

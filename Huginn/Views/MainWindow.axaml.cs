@@ -17,11 +17,15 @@ public partial class MainWindow : Window
 
     private AppSettings? Settings => (DataContext as MainWindowViewModel)?.Settings;
 
+    /// <summary>Width each pane needs before another column is worth having.</summary>
+    private const double PaneWidth = 420;
+
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
 
         RestoreWindowState();
+        UpdateLayoutColumns();
 
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
@@ -36,8 +40,29 @@ public partial class MainWindow : Window
         Activated -= OnWindowActivated;
         Deactivated -= OnWindowDeactivated;
         SaveWindowState();
+
+        // Settings are committed on close rather than on an explicit save, so closing the window
+        // with the panel open must not throw the edits away either.
+        (DataContext as MainWindowViewModel)?.CommitSettings();
+
         (DataContext as IDisposable)?.Dispose();
         base.OnClosing(e);
+    }
+
+    protected override void OnSizeChanged(SizeChangedEventArgs e)
+    {
+        base.OnSizeChanged(e);
+        UpdateLayoutColumns();
+    }
+
+    private void UpdateLayoutColumns()
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+
+        // Three panes now, since pull requests and builds share one. Only 1 or 3: two columns
+        // would leave the third orphaned on a row of its own, which looks like a mistake.
+        var fits = (int)(Bounds.Width / PaneWidth);
+        vm.LayoutColumns = fits >= 3 ? 3 : 1;
     }
 
     private void OnWindowDeactivated(object? sender, EventArgs e)
@@ -50,7 +75,7 @@ public partial class MainWindow : Window
         if (_wasDeactivated && DataContext is MainWindowViewModel vm && vm.IsConnected)
         {
             _wasDeactivated = false;
-            vm.RefreshCommand.Execute(null);
+            _ = vm.RefreshOnFocusAsync();
         }
     }
 

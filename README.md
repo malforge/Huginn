@@ -90,6 +90,75 @@ This produces a self-contained, trimmed single-file executable under
 above — they bundle Velopack so auto-updates work; the `deploy.ps1` output
 is for local development only.
 
+## Asking Huginn from an agent
+
+Huginn publishes what the dashboard is showing to `state.json`, beside its settings, after every
+poll. It can also serve that over [MCP](https://modelcontextprotocol.io), so a coding agent can ask
+what is currently broken instead of being told.
+
+Open **Settings -> Agents** and press **Register with Claude Code**. That writes your own Claude
+configuration, for your user rather than the folder Huginn happened to launch from, and it points at
+whichever copy of Huginn is running.
+
+The same panel prints everything needed to set it up by hand, for a different agent or when the
+button will not do: the command, the `--mcp` argument, the Claude Code one-liner, and the server as
+configuration, which is the shape nearly every MCP client takes.
+
+```json
+{
+  "mcpServers": {
+    "huginn": {
+      "command": "C:\Users\you\AppData\Local\Huginn\current\Huginn.exe",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+The tools:
+
+| Tool | Answers |
+|---|---|
+| `huginn_status` | Everything needing attention right now. Start here. |
+| `huginn_crashes` | Sentry issues, worst reach first. |
+| `huginn_services` | Application Insights findings, most severe first. |
+| `huginn_pull_requests` | The review queues. |
+| `huginn_builds` | Failing and retrying builds. |
+| `huginn_refresh` | Asks a running Huginn to poll now, and waits for the result. |
+
+Every answer opens with how old the snapshot is, and says so plainly once it is stale, because an
+empty list from a source that stopped answering looks exactly like nothing being wrong.
+
+Reading needs no credentials and opens no port: `--mcp` only reads the file the running app wrote,
+and exits when the agent disconnects. `huginn_refresh` is the one thing that talks back, by leaving
+a request the running app picks up. If Huginn is not running, it says so rather than pretending.
+
+Set `HUGINN_PROFILE` to keep a second install's settings, credentials and snapshot separate from
+the first.
+
+## Keeping internal names out
+
+This repository is public, so nothing in it may name a customer, an employer or their
+infrastructure. Two checks enforce that rather than leaving it to care.
+
+Enable the hooks once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+They refuse a commit whose **added lines or message** name a protected term, an email address
+or something shaped like a credential. Removals are ignored, so taking a leaked term back out
+is never blocked.
+
+The list of real names lives in `.git/leak-terms.txt`, which is inside `.git` and so is never
+committed; `.githooks/leak-terms.example.txt` documents the format. A deny-list naming the
+things you are keeping out of a public history must not itself be published.
+
+`.github/workflows/leak-scan.yml` runs the same script over every pushed commit, because a
+local hook is one `--no-verify` away from doing nothing. Give the repository a `LEAK_TERMS`
+secret to apply the literal list there too; without it the built-in shapes still apply.
+
 ## License
 
 [MIT](LICENSE)
