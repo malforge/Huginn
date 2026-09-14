@@ -136,6 +136,29 @@ a request the running app picks up. If Huginn is not running, it says so rather 
 Set `HUGINN_PROFILE` to keep a second install's settings, credentials and snapshot separate from
 the first.
 
+## Keeping internal names out
+
+This repository is public, so nothing in it may name a customer, an employer or their
+infrastructure. Two checks enforce that rather than leaving it to care.
+
+Enable the hooks once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+They refuse a commit whose **added lines or message** name a protected term, an email address
+or something shaped like a credential. Removals are ignored, so taking a leaked term back out
+is never blocked.
+
+The list of real names lives in `.git/leak-terms.txt`, which is inside `.git` and so is never
+committed; `.githooks/leak-terms.example.txt` documents the format. A deny-list naming the
+things you are keeping out of a public history must not itself be published.
+
+`.github/workflows/leak-scan.yml` runs the same script over every pushed commit, because a
+local hook is one `--no-verify` away from doing nothing. Give the repository a `LEAK_TERMS`
+secret to apply the literal list there too; without it the built-in shapes still apply.
+
 ## License
 
 [MIT](LICENSE)

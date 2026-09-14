@@ -1,0 +1,14 @@
+# Copy this to .git/leak-terms.txt and fill in the real values.
+#
+# That destination is inside .git, so it is never committed. This example lives in the
+# repository only to document the format: a deny-list naming the things you are keeping
+# out of a public history must not itself be published, or it hands over the whole list.
+#
+# One literal term per line, matched case-insensitively anywhere in the text.
+# '#' starts a comment. Blank lines are ignored.
+
+# your-employer
+# your-customer
+# internal-hostname-fragment
+# -a-resource-naming-suffix
+# InternalServiceName
