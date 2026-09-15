@@ -56,6 +56,19 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// </summary>
     public ObservableCollection<IgnoredSubject> SuppressedSubjects { get; } = [];
 
+    /// <summary>Watched resources the last poll could not read, so the board is incomplete.</summary>
+    public ObservableCollection<UnreadableResource> UnreadableResources { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUnreadable))]
+    private int _unreadableCount;
+
+    public bool HasUnreadable => UnreadableCount > 0;
+
+    /// <summary>One line naming what could not be checked, shown above the findings.</summary>
+    [ObservableProperty]
+    private string _unreadableSummary = "";
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSuppressed))]
     [NotifyPropertyChangedFor(nameof(SuppressedLink))]
@@ -761,6 +774,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         if (status.State == ConnectionState.Connecting) return "checking…";
         if (status.NeedsAttention) return $"{status.Glyph} {status.StateText}  ·  {checkedAt}";
 
+        // A pane that has not looked yet is not a pane with nothing to report. The first poll can
+        // take a while, and "all clear" during it is a claim Huginn has no basis for.
+        if (last is null) return checkedAt;
+
         return anything ? checkedAt : $"all clear  ·  {checkedAt}";
     }
 
@@ -768,17 +785,20 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// What an empty pane says. A source that cannot report must never be described as quiet:
     /// "nothing is wrong" and "I cannot tell" look identical otherwise, and only one is good news.
     /// </summary>
-    private static string EmptyPaneText(ConnectionStatus status, string quiet) =>
+    private static string EmptyPaneText(ConnectionStatus status, DateTimeOffset? last, string quiet) =>
         status.NeedsAttention
             ? $"Not reporting: {status.StateText}. Empty because Huginn cannot see, not because "
               + "there is nothing to see."
-            : quiet;
+            : last is null
+                ? "Not checked yet. Nothing is known about this until the first check finishes."
+                : quiet;
 
     public string CrashEmptyText => EmptyPaneText(
-        SentryStatus, "Nothing raised. New and returning crashes appear here.");
+        SentryStatus, _sentryLastPolled, "Nothing raised. New and returning crashes appear here.");
 
     public string ServiceEmptyText => EmptyPaneText(
-        AppInsightsStatus, "Nothing raised. Failing routes, slow routes and dead resources appear here.");
+        AppInsightsStatus, _serviceLastPolled,
+        "Nothing raised. Failing routes, slow routes and dead resources appear here.");
 
     private void RefreshPaneStatuses()
     {
@@ -829,6 +849,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             _lastSentryIssues,
             _lastFindings,
             _lastSuppressed,
+            UnreadableResources,
             _settings.GetWebBaseUrl()));
     }
 
@@ -1795,6 +1816,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.SentryPolled += OnSentryPolled;
         _poller.AppInsightsPolled += OnAppInsightsPolled;
         _poller.AppInsightsSuppressed += OnAppInsightsSuppressed;
+        _poller.AppInsightsUnreadable += OnAppInsightsUnreadable;
         _poller.AppInsightsFailed += OnAppInsightsFailed;
         _poller.NewServiceFindingsDetected += OnNewServiceFindingsDetected;
         _poller.StatusChanged += OnStatusChanged;
@@ -1954,6 +1976,38 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                   + $"{suppressed.Sum(i => i.Calls):N0} calls. Listed worst first.";
         });
 
+    /// <summary>
+    /// Records what could not be read, and says so where the findings are shown. A resource that
+    /// could not be examined produces no findings, so silence here is indistinguishable from good
+    /// news, which is the one thing a monitor must never be.
+    /// </summary>
+    private void OnAppInsightsUnreadable(List<UnreadableResource> unreadable)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            Sync(UnreadableResources, unreadable);
+            UnreadableCount = unreadable.Count;
+
+            if (unreadable.Count == 0)
+            {
+                UnreadableSummary = "";
+                return;
+            }
+
+            bool signIn = unreadable.Any(u => u.NeedsSignIn);
+            string names = string.Join(", ", unreadable.Select(u => u.Name).Take(3))
+                           + (unreadable.Count > 3 ? $" and {unreadable.Count - 3} more" : "");
+
+            UnreadableSummary = signIn
+                ? $"{unreadable.Count} resource{(unreadable.Count == 1 ? "" : "s")} could not be "
+                  + $"checked: the Azure sign-in has expired. ({names})"
+                : $"{unreadable.Count} resource{(unreadable.Count == 1 ? "" : "s")} could not be "
+                  + $"checked. ({names})";
+
+            AppInsightsStatus.Set(
+                signIn ? ConnectionState.AuthFailed : ConnectionState.Error,
+                UnreadableSummary);
+        });
+
     private void OnAppInsightsFailed(string msg)
         => Dispatcher.UIThread.Post(() => AppInsightsStatus.Set(
             msg.Contains("signed in", StringComparison.OrdinalIgnoreCase)
@@ -2024,6 +2078,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.SentryPolled -= OnSentryPolled;
         _poller.AppInsightsPolled -= OnAppInsightsPolled;
         _poller.AppInsightsSuppressed -= OnAppInsightsSuppressed;
+        _poller.AppInsightsUnreadable -= OnAppInsightsUnreadable;
         _poller.AppInsightsFailed -= OnAppInsightsFailed;
         _poller.NewServiceFindingsDetected -= OnNewServiceFindingsDetected;
         _poller.StatusChanged -= OnStatusChanged;

@@ -1,3 +1,9 @@
+v.1.4.1
+   - A watched Application Insights resource that cannot be read is now named in the services pane. An expired Azure sign-in used to empty the board and leave the pane reporting all clear, which is the one thing a monitor must never say when it cannot see. When no resource at all could be read, the last findings are kept instead of being replaced by an empty list, and the source is marked as needing attention.
+   - The panes no longer say all clear before their first check has finished. Crashes and services say they have not been checked yet until there is an answer, which matters most for Application Insights, where the first check takes about 40 seconds.
+   - The log is one file per day and the last 14 days are kept. It had no limit before and had grown to 58 MB over five months, which made it slow to open at exactly the moment it was needed. Log files written before this change are left alone rather than tidied away.
+   - A build started with HUGINN_PROFILE writes its log inside that profile's folder, so it no longer appends to the installed copy's log.
+
 v.1.4.0
    - Settings is now a list of sections down the left and one section at a time on the right, rather than expanders inside expanders. Each connection carries its state in the list, so a source that needs attention is visible without opening anything, and what is being held back has a section of its own instead of sitting two expanders deep.
    - Routes answering 404 are reported again. Every 404 used to be dropped, which hides a route your client calls and your server does not have. Scanner traffic is held back by its shape instead: many different paths, a handful of calls each, almost all of them not-found. Anything held back is listed, with the rule that hid it and how much of it there was.

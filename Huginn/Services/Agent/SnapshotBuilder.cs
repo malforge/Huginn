@@ -22,6 +22,7 @@ public static class SnapshotBuilder
         IEnumerable<SentryIssueItem> crashes,
         IEnumerable<ServiceFinding> findings,
         IEnumerable<IgnoredSubject> suppressed,
+        IEnumerable<UnreadableResource> unreadable,
         string webBaseUrl) => new()
         {
             GeneratedAt = DateTimeOffset.UtcNow,
@@ -78,6 +79,15 @@ public static class SnapshotBuilder
                     SeriesBucketMinutes = c.SeriesBucketMinutes,
                     Trend = c.TrendVerdict,
                     Url = c.Permalink,
+                }),
+            ],
+            Unreadable =
+            [
+                .. unreadable.Select(u => new AgentUnreadable
+                {
+                    Name = u.Name,
+                    Reason = u.Reason,
+                    NeedsSignIn = u.NeedsSignIn,
                 }),
             ],
             Suppressed =

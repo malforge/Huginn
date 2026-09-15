@@ -1120,6 +1120,24 @@
                         <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
                             <StackPanel>
+                                <!--
+                                    Above the findings, because it says the findings are incomplete.
+                                    A resource that could not be read contributes nothing, so without
+                                    this an expired sign-in looks exactly like a quiet morning.
+                                -->
+                                <Border IsVisible="{Binding HasUnreadable}" Margin="4" Padding="10,6"
+                                        CornerRadius="4" Background="#33FF9900"
+                                        BorderBrush="#88FF9900" BorderThickness="1">
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Grid.Column="0" Text="⚠" FontSize="14"
+                                                   Foreground="#FFCC7700" VerticalAlignment="Top"
+                                                   Margin="0,0,8,0"/>
+                                        <TextBlock Grid.Column="1" FontSize="12" TextWrapping="Wrap"
+                                                   Foreground="#FFCC7700"
+                                                   Text="{Binding UnreadableSummary}"/>
+                                    </Grid>
+                                </Border>
+
                                 <ItemsControl ItemsSource="{Binding ServiceActions}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="models:ServiceFinding">

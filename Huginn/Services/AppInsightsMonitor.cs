@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Azure.Identity;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -62,7 +63,8 @@ public sealed class AppInsightsMonitor
     public record Snapshot(
         List<ServiceFinding> Findings,
         List<ServiceFinding> NewFindings,
-        List<IgnoredSubject> Ignored);
+        List<IgnoredSubject> Ignored,
+        List<UnreadableResource> Unreadable);
 
     public async Task<Snapshot> PollAsync(
         AppInsightsApiClient client,
@@ -76,6 +78,11 @@ public sealed class AppInsightsMonitor
         // audited is how a real failure stays hidden, which is the whole reason the blanket 404
         // exclusion went unnoticed for as long as it did.
         List<IgnoredSubject> suppressed = [];
+
+        // A resource that could not be read contributes no findings, so without this the pane
+        // shows whatever was readable as if it were the whole picture, and a dead sign-in reads
+        // as good news.
+        List<UnreadableResource> unreadable = [];
 
         foreach (AppInsightsComponent component in components)
         {
@@ -91,9 +98,11 @@ public sealed class AppInsightsMonitor
             }
             catch (Exception ex)
             {
-                // One unreadable resource must not hide the others.
+                // One unreadable resource must not hide the others, but it must not hide itself
+                // either: it is reported back rather than only logged.
                 Log.Error($"Could not examine {component.Name}: {ex.GetType().Name}: {ex.Message}");
                 Log.Error(ex.ToString());
+                unreadable.Add(new UnreadableResource(component.Name, Describe(ex), NeedsSignIn(ex)));
             }
         }
 
@@ -148,7 +157,7 @@ public sealed class AppInsightsMonitor
             return severity != 0 ? severity : b.Magnitude.CompareTo(a.Magnitude);
         });
 
-        return new Snapshot(findings, raised, ignored);
+        return new Snapshot(findings, raised, ignored, unreadable);
     }
 
     private static async Task<List<ServiceFinding>> ExamineAsync(
@@ -413,6 +422,17 @@ public sealed class AppInsightsMonitor
         && double.TryParse(row[index], NumberStyles.Any, CultureInfo.InvariantCulture, out double d)
             ? (long)d
             : 0;
+
+    /// <summary>
+    /// Whether the failure is a lapsed sign-in. Worth telling apart: it is the one cause the user
+    /// can clear themselves, and here it is a daily event rather than an exception.
+    /// </summary>
+    private static bool NeedsSignIn(Exception ex) =>
+        ex is AuthenticationRequiredException or AuthenticationFailedException
+        || ex.Message.Contains("AADSTS", StringComparison.Ordinal);
+
+    private static string Describe(Exception ex) =>
+        NeedsSignIn(ex) ? "the Azure sign-in has expired" : $"{ex.GetType().Name}: {ex.Message}";
 
     public void Reset()
     {

@@ -140,6 +140,9 @@ public sealed class PollingService : IDisposable
     /// <summary>What the rules held back on the last poll, for the settings view to show.</summary>
     public event Action<List<IgnoredSubject>>? AppInsightsSuppressed;
 
+    /// <summary>Watched resources this poll could not read. Empty when everything was readable.</summary>
+    public event Action<List<UnreadableResource>>? AppInsightsUnreadable;
+
     /// <summary>Refreshes every source, for the Refresh button.</summary>
     public Task PollNowAsync(CancellationToken ct = default) => PollNowAsync(force: true, ct);
 
@@ -206,12 +209,24 @@ public sealed class PollingService : IDisposable
 
             var snapshot = await _appInsightsMonitor.PollAsync(client, components, _settings, ct);
 
-            AppInsightsPolled?.Invoke(snapshot.Findings);
-            AppInsightsSuppressed?.Invoke(snapshot.Ignored);
-            _appInsightsLastPolled = DateTimeOffset.UtcNow;
+            // Nothing readable means the findings below describe nothing. Publishing them would
+            // clear the board and read as all clear, so the last known state is kept instead, the
+            // way the Azure DevOps poll already handles a 401.
+            bool nothingReadable = snapshot.Unreadable.Count == components.Count && components.Count > 0;
 
-            if (snapshot.NewFindings.Count > 0)
-                NewServiceFindingsDetected?.Invoke(snapshot.NewFindings);
+            if (!nothingReadable)
+            {
+                AppInsightsPolled?.Invoke(snapshot.Findings);
+                AppInsightsSuppressed?.Invoke(snapshot.Ignored);
+                _appInsightsLastPolled = DateTimeOffset.UtcNow;
+
+                if (snapshot.NewFindings.Count > 0)
+                    NewServiceFindingsDetected?.Invoke(snapshot.NewFindings);
+            }
+
+            // Last, so an unreadable resource has the final say on the source's state rather than
+            // being overwritten by the "connected" a partial poll would otherwise leave behind.
+            AppInsightsUnreadable?.Invoke(snapshot.Unreadable);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)

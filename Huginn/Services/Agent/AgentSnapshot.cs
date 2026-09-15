@@ -30,4 +30,11 @@ public sealed class AgentSnapshot
     /// "something was filtered", which is the distinction a monitor must never blur.
     /// </summary>
     public List<AgentSuppressed> Suppressed { get; set; } = [];
+
+    /// <summary>
+    /// Watched resources the last poll could not read. Without these a reader cannot tell a quiet
+    /// system from a blind one, and the findings above understate what is wrong rather than
+    /// overstating it.
+    /// </summary>
+    public List<AgentUnreadable> Unreadable { get; set; } = [];
 }
