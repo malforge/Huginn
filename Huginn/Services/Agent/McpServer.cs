@@ -69,6 +69,38 @@ public static class McpServer
         };
     }
 
+    /// <summary>
+    /// What a client is told at connect time, before it has called anything.
+    /// </summary>
+    /// <remarks>
+    /// This lands in every session’s context, so it carries only what changes what an agent
+    /// does: where to start, and the Azure setup that is invisible until it fails.
+    /// </remarks>
+    private const string Instructions =
+        """
+        Huginn watches Azure DevOps, Sentry and Azure Application Insights, and holds its own
+        sign-in to each. Call huginn_status first: it says what needs attention now, and which
+        sources are readable at all.
+
+        huginn_investigate answers why a single service finding is happening, using Huginn’s
+        sign-in. Prefer it for a resource Huginn watches, since it needs no Azure access of your
+        own.
+
+        If you query Application Insights directly instead: an Azure MCP server holds one identity
+        for its whole lifetime, and does not follow a later `az account set`. Two environments,
+        such as test and production under separate accounts, therefore need two servers. The
+        second needs both AZURE_CONFIG_DIR, pointing at its own `az login` profile directory, and
+        AZURE_TOKEN_CREDENTIALS=AzureCliCredential. Without the second variable the first is
+        ignored, because the default credential chain never reaches the CLI. The symptom is a 403
+        on a query while the subscription list quietly shows the other profile’s subscriptions,
+        which reads as a permissions problem and is not one.
+
+        Query Application Insights with the classic table names, requests and exceptions, against
+        the component’s own resource id. The workspace forms, AppRequests and AppExceptions, are
+        a different schema. Stack traces live in the details column of exceptions; requests only
+        says that something failed.
+        """;
+
     private static JsonObject Initialize(JsonObject call)
     {
         // Echo the version the client asked for. Every version this server has anything to say
@@ -85,6 +117,7 @@ public static class McpServer
                 ["name"] = ServerName,
                 ["version"] = Str(ReadSnapshot(), "huginnVersion"),
             },
+            ["instructions"] = Instructions,
         };
     }
 
