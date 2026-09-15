@@ -12,34 +12,36 @@ Built on [Avalonia](https://avaloniaui.net/) and .NET 10.
 
 ## Features
 
-- **Pull request monitoring** — your assigned reviews, your own PRs, and
+- **Pull request monitoring**: your assigned reviews, your own PRs, and
   status-by-priority sections: failed validation, missing reviewers,
   autocomplete off, awaiting review, plus a separate group for your active
   PRs and one for items you've acknowledged.
-- **Build failure monitoring** — your personal build failures + any pipelines
+- **Build failure monitoring**: your personal build failures + any pipelines
   you choose to watch. Retrying builds are de-escalated to a warning section
   while the rerun is in flight.
-- **Crash monitoring** (Sentry) — issues are raised either because they
+- **Crash monitoring** (Sentry): issues are raised either because they
   changed (new, returned after being resolved, or outgrew a mute) or because
   they are big, measured by how many people they reach. Each carries a
   sparkline of the last 24 hours and a phrase for its shape, so a constant
   drip reads differently from a single burst.
-- **Service monitoring** (Azure Application Insights) — failing routes, slow
+- **Service monitoring** (Azure Application Insights): failing routes, slow
   routes at the 95th percentile, failing dependencies, and resources that
   have gone silent. Ordered by severity rather than raw magnitude, and
-  failing routes name the result code.
-- **Honest empty panes** — every pane says when it was last checked, and a
+  failing routes name the result code. Opening one lands in the portal on the
+  query behind it: the exceptions and their stack traces for a failing
+  route, percentiles over the window for a slow one.
+- **Honest empty panes**: every pane says when it was last checked, and a
   pane whose source cannot answer says so instead of looking calm. An empty
   list from a broken source is the one thing a monitor must not get wrong.
-- **Desktop notifications** — one per source per check, summarised. Ten new
+- **Desktop notifications**: one per source per check, summarised. Ten new
   items produce one toast naming the count and what is in it, not ten toasts.
-- **Taskbar / dock badge** — count of items needing attention, with
+- **Taskbar / dock badge**: count of items needing attention, with
   acknowledged and approved items excluded.
-- **Launch at login** — Windows registry `Run` key on Windows, LaunchAgent on
+- **Launch at login**: Windows registry `Run` key on Windows, LaunchAgent on
   macOS.
 - **Auto-update** via [Velopack](https://velopack.io) against GitHub
   Releases. Checks at startup and every 30 minutes thereafter; new versions
-  download in the background and apply on next launch — or you can install
+  download in the background and apply on next launch, or you can install
   immediately from the **Updates** section in Settings.
 
 ## Installing
@@ -51,7 +53,7 @@ Grab the latest installer from the
 
 1. Download the file ending in `win-Setup.exe`.
 2. Run it. Windows SmartScreen will warn that the app is from an unknown
-   publisher — that's expected, because Huginn isn't code-signed (it's a
+   publisher, which is expected, because Huginn isn't code-signed (it's a
    free, open-source personal project, and code-signing certificates cost
    real money). Click **More info**, then **Run anyway**.
 3. The installer runs and Huginn starts.
@@ -66,16 +68,16 @@ Grab the latest installer from the
    look at the **Chip** or **Processor** line.
 
 2. Open the downloaded `.pkg`. macOS will block it because the app isn't
-   signed with an Apple Developer ID — that's expected, for the same reason
-   as Windows above. In the warning, click **Done** (or **Cancel**) — **not
+   signed with an Apple Developer ID, which is expected, for the same reason
+   as Windows above. In the warning, click **Done** (or **Cancel**), **not
    "Move to Trash"**, which deletes the installer you just downloaded.
 3. Open **System Settings → Privacy & Security** and scroll down to the
    **Security** section. You'll see a note that Huginn was blocked, with an
-   **Open Anyway** button — click it, authenticate, then confirm **Open** in
+   **Open Anyway** button: click it, authenticate, then confirm **Open** in
    the dialog. Follow the installer prompts.
 
 Once installed, future updates download and apply themselves the next time
-you launch the app — you don't need to repeat any of this.
+you launch the app, and you don't need to repeat any of this.
 
 ## First-time setup
 
@@ -83,23 +85,23 @@ When you first launch Huginn, the Settings panel opens automatically.
 
 Each connection is separate, and you only need the ones you want. Every
 credential below is stored in Windows Credential Manager (DPAPI-encrypted) or
-the macOS Keychain — never in a settings file.
+the macOS Keychain, never in a settings file.
 
 ### Azure DevOps
 
-1. **Organization & Project** — the values from your DevOps URL
+1. **Organization & Project**: the values from your DevOps URL
    `https://dev.azure.com/{Organization}/{Project}`.
-2. **Personal Access Token** — click "Open the token settings page ↗" in
+2. **Personal Access Token**: click "Open the token settings page ↗" in
    Settings. Create a token with **Code → Read** and **Build → Read** scopes,
    then paste it.
 3. **Test connection**, then pick any pipelines you want watched.
 
 ### Sentry
 
-1. **Organization** — your Sentry organisation slug.
-2. **Region URL** — EU-resident organisations answer on a regional host rather
+1. **Organization**: your Sentry organisation slug.
+2. **Region URL**: EU-resident organisations answer on a regional host rather
    than `sentry.io`; the org settings page shows which region yours is in.
-3. **Auth token** — click "Open the auth tokens page ↗". Read scopes are
+3. **Auth token**: click "Open the auth tokens page ↗". Read scopes are
    enough: `org:read`, `project:read`, `event:read`.
 4. **Test connection**, then tick the projects to watch. Nothing is watched
    until you choose something.
@@ -124,7 +126,7 @@ Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 This produces a self-contained, trimmed single-file executable under
 `./deploy/`. End-user installs should use the GitHub Releases artifacts
-above — they bundle Velopack so auto-updates work; the `deploy.ps1` output
+above, because they bundle Velopack so auto-updates work; the `deploy.ps1` output
 is for local development only.
 
 ## Asking Huginn from an agent
@@ -159,6 +161,7 @@ The tools:
 | `huginn_status` | Everything needing attention right now. Start here. |
 | `huginn_crashes` | Sentry issues, worst reach first. |
 | `huginn_services` | Application Insights findings, most severe first. |
+| `huginn_investigate` | Why one finding is happening, over the window Huginn measured. |
 | `huginn_pull_requests` | The review queues. |
 | `huginn_builds` | Failing and retrying builds. |
 | `huginn_refresh` | Asks a running Huginn to poll now, and waits for the result. |
@@ -167,8 +170,9 @@ Every answer opens with how old the snapshot is, and says so plainly once it is 
 empty list from a source that stopped answering looks exactly like nothing being wrong.
 
 Reading needs no credentials and opens no port: `--mcp` only reads the file the running app wrote,
-and exits when the agent disconnects. `huginn_refresh` is the one thing that talks back, by leaving
-a request the running app picks up. If Huginn is not running, it says so rather than pretending.
+and exits when the agent disconnects. `huginn_refresh` and `huginn_investigate` are the two that
+talk back, by leaving a request the running app picks up. If Huginn is not running, it says so
+rather than pretending.
 
 Set `HUGINN_PROFILE` to keep a second install's settings, credentials and snapshot separate from
 the first.
