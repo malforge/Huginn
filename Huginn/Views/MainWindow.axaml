@@ -762,6 +762,12 @@
                             </CheckBox>
                             <TextBlock Classes="pagenote"
                                        Text="Watching starts when you log in rather than when you remember to open it."/>
+
+                            <CheckBox IsChecked="{Binding ExplainPortalView}" Margin="0,8,0,0">
+                                <TextBlock Text="Explain the Azure portal before opening a finding" TextWrapping="Wrap"/>
+                            </CheckBox>
+                            <TextBlock Classes="pagenote"
+                                       Text="The portal opens its own queries hub over the view, and may show the query in Simple mode with the KQL hidden. Neither can be set from a link."/>
                         </StackPanel>
                     </Panel>
                 </ScrollViewer>
@@ -1215,6 +1221,48 @@
                     </Grid>
                 </Border>
         </UniformGrid>
+
+        <!-- ═══ PORTAL EXPLAINER ═══
+             What the portal does to the link, said once. The query does arrive; the portal
+             covers it with the queries hub and can flatten the editor into Simple mode, and
+             neither is addressable from the URL. -->
+        <Border Grid.Row="0" Grid.RowSpan="4" Background="#B0000000"
+                IsVisible="{Binding IsPortalHintVisible}">
+            <Border MaxWidth="460" Margin="24"
+                    VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Padding="20" CornerRadius="8"
+                    Background="{DynamicResource SystemAltHighColor}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Before the portal opens" FontSize="15" FontWeight="SemiBold"/>
+
+                    <TextBlock TextWrapping="Wrap" Opacity="0.85"
+                               Text="Huginn sends the query with the link, but the portal puts two things in front of it."/>
+
+                    <TextBlock TextWrapping="Wrap" Opacity="0.85"
+                               Text="①  A Queries hub opens on top. Close it and the query is underneath, already there."/>
+                    <TextBlock TextWrapping="Wrap" Opacity="0.85"
+                               Text="②  The editor may be in Simple mode, which hides the KQL and shows a filter bar instead. Switch to KQL mode to read it."/>
+
+                    <TextBlock TextWrapping="Wrap" FontSize="12" Opacity="0.6"
+                               Text="Both are portal preferences held per user. A link cannot set them, so this is worth knowing rather than fixing."/>
+
+                    <TextBlock FontSize="12" Opacity="0.6" TextTrimming="CharacterEllipsis"
+                               Text="{Binding PortalHintSubject, StringFormat='Opening: {0}'}"/>
+
+                    <CheckBox IsChecked="{Binding PortalHintDismissed}" Margin="0,4,0,0">
+                        <TextBlock Text="Do not show this again" TextWrapping="Wrap"/>
+                    </CheckBox>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Content="Cancel" Command="{Binding CancelPortalHintCommand}"/>
+                        <Button Content="Open in portal" Classes="accent"
+                                Command="{Binding ConfirmPortalHintCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
 
         <!-- ═══ STATUS BAR ═══ -->
         <Border Grid.Row="3" Padding="12,6" Background="{DynamicResource SystemAltHighColor}">

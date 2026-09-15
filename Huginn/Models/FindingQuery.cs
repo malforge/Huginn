@@ -56,6 +56,63 @@ public static class FindingQuery
     }
 
     /// <summary>
+    /// What to show a person who opens the finding in the portal: why it is happening, rather
+    /// than the measurement that <see cref="Evidence"/> reproduces.
+    /// </summary>
+    /// <remarks>
+    /// This one may select the stack and the message, which <see cref="Explanations"/> may not.
+    /// Its rows land in a browser the person is already signed into, not in an agent transcript.
+    /// </remarks>
+    public static string Portal(ServiceFinding finding)
+    {
+        string window = Window(finding);
+        string subject = Literal(finding.Subject);
+
+        return finding.Kind switch
+        {
+            // The stack lives in exceptions. requests only says that something failed.
+            FindingKind.FailureRate => $"""
+                exceptions
+                | where timestamp > ago({window})
+                | where operation_Name == {subject}
+                | project timestamp, type, outerMessage, method, assembly, details
+                | order by timestamp desc
+                """,
+
+            // A dependency failure carries no stack of its own, so reach the caller’s through
+            // the operation they share. leftouter keeps the failures that raised nothing.
+            FindingKind.Dependency => $"""
+                dependencies
+                | where timestamp > ago({window}) and success == false
+                | where strcat(type, " ", target) == {subject}
+                | project operation_Id, timestamp, resultCode, operation_Name
+                | join kind=leftouter (
+                      exceptions
+                      | where timestamp > ago({window})
+                      | project operation_Id, type, outerMessage, details
+                  ) on operation_Id
+                | project timestamp, operation_Name, resultCode, type, outerMessage, details
+                | order by timestamp desc
+                """,
+
+            FindingKind.Latency => $"""
+                requests
+                | where timestamp > ago({window})
+                | where name == {subject}
+                | summarize calls = sum(itemCount),
+                            p50 = round(percentile(duration, 50)),
+                            p95 = round(percentile(duration, 95)),
+                            p99 = round(percentile(duration, 99))
+                          by bin(timestamp, 15m)
+                | order by timestamp asc
+                """,
+
+            // Nothing arriving: the shape of the silence is the whole answer.
+            _ => Evidence(finding),
+        };
+    }
+
+    /// <summary>
     /// Says why it is failing rather than that it is. Deliberately selects nothing that
     /// identifies a person: no user ids, no query strings, no custom dimensions. Telemetry read
     /// this way ends up in an agent's context and from there in a transcript.

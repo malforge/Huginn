@@ -199,6 +199,15 @@ public sealed partial class AppSettings
     public List<int> AcknowledgedBuildIds { get; set; } = [];
     public List<int> AcknowledgedPrIds { get; set; } = [];
 
+    /// <summary>
+    /// Whether opening a finding in the Azure portal first explains what the portal will show.
+    /// </summary>
+    /// <remarks>
+    /// The portal opens its queries hub over the view and may flatten the editor into Simple
+    /// mode, and neither can be set from the URL, so the query looks absent when it is not.
+    /// </remarks>
+    public bool ExplainPortalView { get; set; } = true;
+
     public AppSettings(ICredentialStore credentialStore)
     {
         _credentialStore = credentialStore;
@@ -473,6 +482,7 @@ public sealed partial class AppSettings
             MonitorMyBuilds = MonitorMyBuilds,
             AcknowledgedBuildIds = AcknowledgedBuildIds,
             AcknowledgedPrIds = AcknowledgedPrIds,
+            ExplainPortalView = ExplainPortalView,
         }, SettingsJsonContext.Default.SettingsDto);
         File.WriteAllText(SettingsPath, json);
     }
@@ -525,6 +535,7 @@ public sealed partial class AppSettings
                 MonitorMyBuilds = dto.MonitorMyBuilds,
                 AcknowledgedBuildIds = dto.AcknowledgedBuildIds ?? [],
                 AcknowledgedPrIds = dto.AcknowledgedPrIds ?? [],
+                ExplainPortalView = dto.ExplainPortalView,
             };
         }
         catch
@@ -568,6 +579,7 @@ public sealed partial class AppSettings
         public bool MonitorMyBuilds { get; set; } = true;
         public List<int>? AcknowledgedBuildIds { get; set; }
         public List<int>? AcknowledgedPrIds { get; set; }
+        public bool ExplainPortalView { get; set; } = true;
     }
 
     [JsonSerializable(typeof(SettingsDto))]

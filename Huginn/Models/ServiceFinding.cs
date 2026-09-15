@@ -20,19 +20,10 @@ public sealed partial class ServiceFinding : ObservableObject
     public string ResourceId { get; init; } = "";
 
     /// <summary>
-    /// Opens the blade that deals with this kind of problem. Application Insights has no
-    /// per-operation permalink, and the portal ignores a query passed in the URL, so this is
-    /// as close as a link gets: the performance blade lists operations by duration, and the
-    /// failures blade by result code.
+    /// Opens the portal’s Logs view on the query that explains this finding, so the link lands
+    /// on the stack rather than on a blade listing every operation the resource has.
     /// </summary>
-    public string PortalUrl => ResourceId.Length == 0
-        ? ""
-        : $"https://portal.azure.com/#resource{ResourceId}/" + Kind switch
-        {
-            FindingKind.Latency => "performance",
-            FindingKind.FailureRate or FindingKind.Dependency => "failures",
-            _ => "overview",
-        };
+    public string PortalUrl => PortalLink.ForLogs(ResourceId, PortalQuery, WindowMinutes);
 
     public bool HasPortalUrl => PortalUrl.Length > 0;
 
@@ -55,6 +46,9 @@ public sealed partial class ServiceFinding : ObservableObject
 
     /// <summary>The query that would show exactly what Huginn saw.</summary>
     public string EvidenceQuery => FindingQuery.Evidence(this);
+
+    /// <summary>The query a person wants when they open this in the portal.</summary>
+    public string PortalQuery => FindingQuery.Portal(this);
 
     /// <summary>
     /// Stable across polls so a finding can be muted or dismissed and still be recognised next

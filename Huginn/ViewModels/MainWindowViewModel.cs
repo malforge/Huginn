@@ -183,6 +183,21 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _monitorMyBuilds;
     [ObservableProperty] private bool _autoStartEnabled;
 
+    /// <summary>Whether the portal explainer is shown before a finding opens in the browser.</summary>
+    [ObservableProperty] private bool _explainPortalView;
+
+    /// <summary>Whether the portal explainer is on screen right now.</summary>
+    [ObservableProperty] private bool _isPortalHintVisible;
+
+    /// <summary>The explainer’s own "do not show this again", applied only if the user goes on to open.</summary>
+    [ObservableProperty] private bool _portalHintDismissed;
+
+    /// <summary>The subject named in the explainer, so it is clear which finding is about to open.</summary>
+    [ObservableProperty] private string _portalHintSubject = "";
+
+    /// <summary>The finding waiting behind the explainer.</summary>
+    private ServiceFinding? _pendingPortalFinding;
+
     /// <summary>The section of settings on show. Everything else is one click away, not nested.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAdoPage))]
@@ -263,6 +278,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                          ?? WindowChoices[0];
         SentryToken = _settings.GetSentryToken() ?? "";
         MonitorMyBuilds = _settings.MonitorMyBuilds;
+        ExplainPortalView = _settings.ExplainPortalView;
         AutoStartEnabled = _autoStart.IsEnabled;
 
         UpdateService.Instance.PropertyChanged += OnUpdateServicePropertyChanged;
@@ -433,6 +449,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         SaveSentryConnection();
         SaveAppInsightsConnection();
         _settings.MonitorMyBuilds = MonitorMyBuilds;
+        _settings.ExplainPortalView = ExplainPortalView;
 
         // Only when the picker actually holds the list. Deriving from an empty collection would
         // silently erase the selection every time the list failed to load.
@@ -734,7 +751,45 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OpenServiceFinding(ServiceFinding? finding)
     {
         if (finding is null || !finding.HasPortalUrl) return;
+
+        // The portal lands on its own furniture rather than on the query, so say what to expect
+        // once rather than let the view look empty.
+        if (ExplainPortalView)
+        {
+            _pendingPortalFinding = finding;
+            PortalHintSubject = finding.Subject;
+            PortalHintDismissed = false;
+            IsPortalHintVisible = true;
+            return;
+        }
+
         OpenUrl(finding.PortalUrl, AppInsightsStatus);
+    }
+
+    /// <summary>Opens the finding the explainer is holding, honouring its "do not show again".</summary>
+    [RelayCommand]
+    private void ConfirmPortalHint()
+    {
+        var finding = _pendingPortalFinding;
+        IsPortalHintVisible = false;
+        _pendingPortalFinding = null;
+
+        if (PortalHintDismissed)
+        {
+            ExplainPortalView = false;
+            _settings.ExplainPortalView = false;
+            _settings.Save();
+        }
+
+        if (finding is not null) OpenUrl(finding.PortalUrl, AppInsightsStatus);
+    }
+
+    /// <summary>Closes the explainer without opening anything, and without changing the setting.</summary>
+    [RelayCommand]
+    private void CancelPortalHint()
+    {
+        IsPortalHintVisible = false;
+        _pendingPortalFinding = null;
     }
 
     [RelayCommand]
