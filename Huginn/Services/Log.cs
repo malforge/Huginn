@@ -42,13 +42,14 @@ public static class Log
         // FileShare.ReadWrite lets a second instance share the file, but only when the first one
         // opened it that way too. An older build holding it exclusively would otherwise leave this
         // process with no log at all, so fall back to a file of its own.
-        _writer = TryOpen(PathFor(day)) ?? TryOpen(FallbackPath(day));
+        _writer = OpenShared(PathFor(day)) ?? OpenShared(FallbackPath(day));
         _writerDay = day;
 
         Prune();
     }
 
-    private static StreamWriter? TryOpen(string path)
+    /// <summary>The log file opened for appending alongside any other process writing it.</summary>
+    internal static StreamWriter? OpenShared(string path)
     {
         try
         {
@@ -106,13 +107,29 @@ public static class Log
             lock (Lock)
             {
                 EnsureWriter(DateOnly.FromDateTime(now));
-                _writer?.WriteLine($"{now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {message}");
+                if (_writer != null) AppendLine(_writer, $"{now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {message}");
             }
         }
         catch
         {
             // Logging must never crash the app
         }
+    }
+
+    /// <summary>
+    /// Writes one line at the end of the file as it is now, not where this process last left it.
+    /// </summary>
+    /// <remarks>
+    /// The app and every MCP server started over stdio write the same file. Opening for append
+    /// places each handle at the end only once, so without the seek each process would write over
+    /// what the others have added since.
+    /// </remarks>
+    internal static void AppendLine(StreamWriter writer, string line)
+    {
+        writer.Flush();
+        writer.BaseStream.Seek(0, SeekOrigin.End);
+        writer.WriteLine(line);
+        writer.Flush();
     }
 
     public static void Info(string message) => Write("INF", message);

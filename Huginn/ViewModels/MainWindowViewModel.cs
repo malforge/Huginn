@@ -1566,6 +1566,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string _agentRegistrationStatus = "";
 
+    /// <summary>The entry last read, so replacing it can put it back if the new one is refused.</summary>
+    private ClaudeCodeRegistration.Registration _agentRegistration;
+
 
     /// <summary>
     /// Reads the current state rather than assuming it. Someone may have registered or removed it
@@ -1589,6 +1592,26 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         var registration = await ClaudeCodeRegistration.ReadRegistrationAsync();
 
+        // An entry that has Claude Code start this very copy over stdio is Huginn's own, made
+        // before it served HTTP. An update stops that copy for good, so it is moved over to this
+        // copy's address without asking. Any other entry was someone's choice and is left alone.
+        string? upgradeFailure = null;
+        if (registration.StartsCopyAt(Environment.ProcessPath))
+        {
+            (bool ok, string message) = await ClaudeCodeRegistration.RegisterAsync(_settings.EnsureAgentToken(), registration);
+            if (ok)
+            {
+                Log.Info($"Replaced the Claude Code entry that started this copy over stdio with {McpEndpoint.Url}");
+                registration = await ClaudeCodeRegistration.ReadRegistrationAsync();
+            }
+            else
+            {
+                upgradeFailure = message;
+                Log.Error($"Could not move the Claude Code entry over to {McpEndpoint.Url}: {message}");
+            }
+        }
+
+        _agentRegistration = registration;
         AgentRegistered = registration.Registered;
         AgentPointsHere = registration.PointsHere;
 
@@ -1596,9 +1619,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
             { Registered: false } => "Not registered yet.",
             { PointsHere: true } => $"Registered, reaching this copy at {McpEndpoint.Url}.",
-            { IsStdio: true } =>
-                "Registered the old way, as a program Claude Code starts. An update stops it and "
-                + "Claude Code does not start it again. Point it at this copy to switch over.",
+            _ when upgradeFailure != null =>
+                $"Claude Code still starts its own copy of Huginn, which an update stops. Moving it over to this copy failed: {upgradeFailure}",
+            { IsStdio: true } r => $"Registered, but Claude Code starts another copy of Huginn: {r.Target}",
             { Target.Length: > 0 } r when !string.Equals(r.Target, McpEndpoint.Url, StringComparison.OrdinalIgnoreCase) =>
                 $"Registered, but pointing at another address: {r.Target}",
             { Target.Length: > 0 } =>
@@ -1615,7 +1638,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         AgentBusy = true;
         try
         {
-            (bool ok, string message) = await ClaudeCodeRegistration.RegisterAsync(_settings.EnsureAgentToken());
+            (bool ok, string message) = await ClaudeCodeRegistration.RegisterAsync(_settings.EnsureAgentToken(), _agentRegistration);
             AgentRegistrationStatus = message;
             if (!ok) return;
 

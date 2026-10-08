@@ -27,6 +27,12 @@ public sealed class McpHttpHost : IDisposable
     private readonly byte[] _expectedAuthorization;
     private readonly Func<string, string?> _respond;
 
+    /// <summary>
+    /// Set before the listener closes. Closing fails whatever is still waiting on it, which is
+    /// the listener stopping as asked rather than something going wrong.
+    /// </summary>
+    private volatile bool _stopping;
+
     public McpHttpHost(int port, string token, Func<string, string?> respond)
     {
         _listener.Prefixes.Add($"http://localhost:{port}/");
@@ -50,13 +56,13 @@ public sealed class McpHttpHost : IDisposable
             {
                 context = await _listener.GetContextAsync();
             }
-            catch (Exception) when (!_listener.IsListening)
+            catch (Exception) when (_stopping || !_listener.IsListening)
             {
                 return;
             }
             catch (Exception ex)
             {
-                Log.Error($"MCP over HTTP: {ex.Message}");
+                Log.Error($"MCP over HTTP: {ex}");
                 continue;
             }
 
@@ -115,9 +121,13 @@ public sealed class McpHttpHost : IDisposable
             response.ContentLength64 = bytes.Length;
             await response.OutputStream.WriteAsync(bytes);
         }
+        catch (Exception) when (_stopping)
+        {
+            // Stopped while answering; the caller is gone with it.
+        }
         catch (Exception ex)
         {
-            Log.Error($"MCP over HTTP: {ex.Message}");
+            Log.Error($"MCP over HTTP: {ex}");
             try { response.StatusCode = (int)HttpStatusCode.InternalServerError; } catch { }
         }
         finally
@@ -152,5 +162,9 @@ public sealed class McpHttpHost : IDisposable
         return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
     }
 
-    public void Dispose() => _listener.Close();
+    public void Dispose()
+    {
+        _stopping = true;
+        _listener.Close();
+    }
 }

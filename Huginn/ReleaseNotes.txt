@@ -1,3 +1,8 @@
+v.1.6.1
+   - A Claude Code registration made before 1.6.0, which has Claude Code start this copy of Huginn itself, is moved over to the HTTP address when Huginn starts, with no button to press. A registration pointing at anything else is left alone. Should Claude Code refuse the new entry, the old one is put back rather than leaving none.
+   - Fixed: the app and an MCP server started over stdio write the same log, and each wrote over the lines the other had added, so entries went missing.
+   - Fixed: stopping Huginn logged an error from its agent address although nothing had gone wrong.
+
 v.1.6.0
    - Claude Code now reaches Huginn over HTTP, at an address on this machine only, and stays connected through an update. It used to start Huginn itself, and an update stopped that copy, which Claude Code never starts again, so every session lost Huginn until it was reconnected by hand. Press Point at this copy under Settings, Agents once to switch over.
    - The address answers only a caller holding the token Huginn hands Claude Code when registering, since any program on the machine can reach a local port. A named HUGINN_PROFILE gets a port of its own.

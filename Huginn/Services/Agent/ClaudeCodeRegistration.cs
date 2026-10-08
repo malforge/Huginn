@@ -108,6 +108,23 @@ public static class ClaudeCodeRegistration
             && string.Equals(Target, McpEndpoint.Url, StringComparison.OrdinalIgnoreCase);
 
         public bool IsStdio => string.Equals(Type, "stdio", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Claude Code starts the executable at this path over stdio.</summary>
+        public bool StartsCopyAt(string? executable)
+        {
+            if (!IsStdio || Target.Length == 0 || executable is null) return false;
+            try
+            {
+                return string.Equals(
+                    Path.GetFullPath(Target), Path.GetFullPath(executable),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception)
+            {
+                // A command that is not a path at all is not this copy.
+                return false;
+            }
+        }
     }
 
     /// <summary>
@@ -153,7 +170,14 @@ public static class ClaudeCodeRegistration
     /// Removes first, since <c>claude mcp add</c> refuses a name that is already taken. The
     /// endpoint is this copy's own, so a development build under a profile registers its own port.
     /// </remarks>
-    public static async Task<(bool Ok, string Message)> RegisterAsync(string token, CancellationToken ct = default)
+    /// <param name="token">The token Claude Code is to present.</param>
+    /// <param name="replacing">
+    /// The entry being replaced. There is no replacing in one step, so when the new entry is
+    /// refused after the old one is gone, a stdio entry is put back rather than leaving none.
+    /// </param>
+    /// <param name="ct">Cancels waiting on the CLI.</param>
+    public static async Task<(bool Ok, string Message)> RegisterAsync(
+        string token, Registration replacing = default, CancellationToken ct = default)
     {
         if (FindClaude() is not { } claude)
             return (false, "Claude Code was not found on this machine.");
@@ -167,10 +191,21 @@ public static class ClaudeCodeRegistration
              "--header", AuthorizationHeader(token)],
             ct);
 
-        return code == 0
-            ? (true, $"Claude Code now reaches this copy at {McpEndpoint.Url}. "
-                     + "New sessions connect at once; open ones after /mcp.")
-            : (false, Explain(output, error));
+        if (code == 0)
+        {
+            return (true, $"Claude Code now reaches this copy at {McpEndpoint.Url}. "
+                          + "New sessions connect at once; open ones after /mcp.");
+        }
+
+        string refused = Explain(output, error);
+        if (!replacing.IsStdio || replacing.Target.Length == 0) return (false, refused);
+
+        (int restored, _, _) = await RunAsync(
+            claude, ["mcp", "add", "-s", Scope, ServerName, "--", replacing.Target, ServeArgument], ct);
+
+        return (false, restored == 0
+            ? $"{refused} The previous entry was put back."
+            : $"{refused} The previous entry could not be put back either, so none is registered.");
     }
 
     /// <summary>Removes the registration, wherever it was made.</summary>

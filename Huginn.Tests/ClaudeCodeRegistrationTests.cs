@@ -45,6 +45,32 @@ public sealed class ClaudeCodeRegistrationTests
     }
 
     [Fact]
+    public void A_stdio_entry_naming_this_executable_starts_this_copy()
+    {
+        var registration = ClaudeCodeRegistration.Parse(Stdio);
+
+        Assert.True(registration.StartsCopyAt(@"C:\Users\you\AppData\Local\Huginn\current\Huginn.exe"));
+        Assert.True(registration.StartsCopyAt(@"c:\users\YOU\appdata\local\huginn\current\huginn.exe"));
+    }
+
+    [Fact]
+    public void A_stdio_entry_naming_another_executable_does_not_start_this_copy()
+    {
+        var registration = ClaudeCodeRegistration.Parse(Stdio);
+
+        Assert.False(registration.StartsCopyAt(@"C:\Code\Huginn\bin\Debug\Huginn.exe"));
+        Assert.False(registration.StartsCopyAt(null));
+    }
+
+    [Fact]
+    public void An_http_entry_starts_no_copy()
+    {
+        var registration = ClaudeCodeRegistration.Parse(Http(McpEndpoint.Url, "✔ Connected"));
+
+        Assert.False(registration.StartsCopyAt(McpEndpoint.Url));
+    }
+
+    [Fact]
     public void An_http_entry_at_this_address_that_connects_points_here()
     {
         var registration = ClaudeCodeRegistration.Parse(Http(McpEndpoint.Url, "✔ Connected"));

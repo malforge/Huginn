@@ -140,7 +140,9 @@ what is currently broken instead of being told.
 Open **Settings -> Agents** and press **Register with Claude Code**. That writes your own Claude
 configuration, for your user rather than the folder Huginn happened to launch from. Claude Code then
 reaches the running app over HTTP at `http://localhost:38457/mcp`, with a token Huginn hands it when
-registering. An update restarts Huginn, and Claude Code reconnects to it on its own.
+registering. An update restarts Huginn, and Claude Code reconnects to it on its own. A registration
+made by an older Huginn, which has Claude Code start Huginn itself, is moved over to this address
+when Huginn starts.
 
 The same panel prints everything needed to set it up by hand, for a different agent or when the
 button will not do: the Claude Code one-liner, and for any other MCP client the command, the
