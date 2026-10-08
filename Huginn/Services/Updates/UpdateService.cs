@@ -2,6 +2,7 @@ using System;
 using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -47,6 +48,9 @@ public sealed partial class UpdateService : ObservableObject
 
     private readonly UpdateManager _mgr;
     private UpdateInfo? _pendingUpdate;
+
+    /// <summary>1 while a check runs, so the timer and the button cannot overlap.</summary>
+    private int _checking;
     private DispatcherTimer? _pollTimer;
 
     [ObservableProperty] private UpdateState _state = UpdateState.Idle;
@@ -109,14 +113,24 @@ public sealed partial class UpdateService : ObservableObject
     /// Awaitable update check. No-ops on dev/local-publish builds where Velopack
     /// is not installed (CanUpdate=false); State remains Idle in that case.
     /// </summary>
+    /// <remarks>
+    /// Once an update is downloaded, a later check runs quietly: it stays UpdateReady while
+    /// looking for a newer release, and a failed check keeps offering the downloaded one. The
+    /// state changes only when the answer does, so what is shown for a ready update holds still.
+    /// </remarks>
     public async Task CheckAsync()
     {
         if (!_mgr.IsInstalled) return;
+        if (Interlocked.Exchange(ref _checking, 1) == 1) return;
 
+        var recheck = _pendingUpdate is not null;
         try
         {
-            State = UpdateState.Checking;
-            ErrorMessage = null;
+            if (!recheck)
+            {
+                State = UpdateState.Checking;
+                ErrorMessage = null;
+            }
 
             var update = await _mgr.CheckForUpdatesAsync();
             if (update is null)
@@ -128,18 +142,30 @@ public sealed partial class UpdateService : ObservableObject
                 return;
             }
 
-            _pendingUpdate = update;
-            AvailableVersion = update.TargetFullRelease.Version?.ToString();
+            if (recheck && Equals(update.TargetFullRelease.Version, _pendingUpdate!.TargetFullRelease.Version))
+                return;
 
             await _mgr.DownloadUpdatesAsync(update);
+            _pendingUpdate = update;
+            AvailableVersion = update.TargetFullRelease.Version?.ToString();
             State = UpdateState.UpdateReady;
 
             _ = Task.Run(FetchReleaseNotesAsync);
         }
         catch (Exception ex)
         {
+            if (recheck)
+            {
+                Log.Error($"Update recheck: {ex.Message}");
+                return;
+            }
+
             ErrorMessage = ex.Message;
             State = UpdateState.Failed;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _checking, 0);
         }
     }
 

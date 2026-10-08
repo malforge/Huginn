@@ -1,3 +1,6 @@
+v.1.5.4
+   - Fixed: the Update available button disappeared for a few seconds every half hour while Huginn looked for a newer version, moving the Refresh button beside it, and stayed gone if that check failed, even though the downloaded update was still there to install. Once an update is downloaded, later checks run quietly and the button only changes when a newer release replaces it.
+
 v.1.5.3
    - A pull request is numbered !12345 on its card, the way Azure DevOps writes it. It was #12345, which is how a work item is written.
 
