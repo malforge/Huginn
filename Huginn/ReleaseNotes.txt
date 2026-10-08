@@ -1,3 +1,7 @@
+v.1.5.1
+   - Fixed: a failed build was shown as being retried whenever anything at all was running on its pipeline, even after a later run on the same branch had passed. Builds are now compared within their own pipeline and branch. A failure counts as retried only when a run is under way and the run before it failed, and it is cleared by a pass on its own branch, not by a pass on another.
+   - Two branches failing on the same pipeline are now two cards. Only the newest failure per pipeline was shown before, so one failing pull request could hide another.
+
 v.1.5.0
    - New: an agent can ask why a single service finding is happening. Huginn runs the drill-downs behind the finding using its own sign-in and answers over the MCP connection, so an agent can reach the telemetry behind a finding, over the same window Huginn measured, without Azure access of its own.
    - A service finding's open button now opens the portal on the query behind the finding. It used to open the failures or performance blade, which lists every operation the resource has and answers over a different window, so the finding being looked at had to be found again by hand. What opens depends on the kind: a failing route opens the exceptions with their stack traces, a failing dependency opens the exception from the call that used it, and a slow route opens its percentiles over the window.

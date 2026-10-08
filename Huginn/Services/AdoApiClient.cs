@@ -327,20 +327,22 @@ public sealed class AdoApiClient : IDisposable
     }
 
     /// <summary>
-    /// Gets the most recent build (any status, including in-progress) for each definition.
-    /// Used to detect if a failure has been superseded by a newer success or retry.
+    /// Gets every run of one pipeline on one branch queued since <paramref name="since"/>, in any
+    /// state, including queued and running ones. Used to decide whether a failure has been fixed
+    /// or is being retried.
     /// </summary>
-    public async Task<List<(int DefinitionId, int BuildId, string Status, BuildResult Result, string WebUrl)>> GetLatestBuildStatusPerDefinitionAsync(
-        IEnumerable<int> definitionIds, CancellationToken ct = default)
+    public async Task<List<BuildRun>> GetBuildRunsOnBranchSinceAsync(
+        int definitionId, string branch, DateTime since, CancellationToken ct = default)
     {
-        var result = new List<(int, int, string, BuildResult, string)>();
-        var ids = string.Join(",", definitionIds);
-        if (string.IsNullOrEmpty(ids)) return result;
+        var result = new List<BuildRun>();
         try
         {
-            // No statusFilter → returns builds in any state (queued, inProgress, completed)
-            var url = $"{_baseUrl}/_apis/build/builds?definitions={ids}"
-                      + "&maxBuildsPerDefinition=1&queryOrder=queueTimeDescending&api-version=7.0";
+            // No statusFilter, so runs in every state come back. With queueTimeDescending,
+            // minTime filters on queue time rather than finish time, so runs still under way count.
+            var url = $"{_baseUrl}/_apis/build/builds?definitions={definitionId}"
+                      + $"&branchName={Uri.EscapeDataString(branch)}"
+                      + $"&minTime={Uri.EscapeDataString(since.ToUniversalTime().ToString("O"))}"
+                      + "&queryOrder=queueTimeDescending&api-version=7.0";
             Log.Info($"GET {url}");
             var resp = await _http.GetAsync(url, ct);
             Log.Info($"  → {(int)resp.StatusCode} {resp.ReasonPhrase}");
@@ -371,11 +373,14 @@ public sealed class AdoApiClient : IDisposable
                     && web.TryGetProperty("href", out var href))
                     webUrl = href.GetString() ?? "";
 
-                result.Add((defId, buildId, status, buildResult, webUrl));
+                var sourceBranch = b.TryGetProperty("sourceBranch", out var sb) ? sb.GetString() ?? "" : "";
+
+                result.Add(new BuildRun(buildId, defId, sourceBranch, status, buildResult, webUrl));
             }
+            Log.Info($"  Runs on {branch} since {since:O}: {result.Count}");
         }
         catch (OperationCanceledException) { throw; }
-        catch (Exception ex) { Log.Error($"GetLatestBuildStatusPerDefinition: {ex.Message}"); }
+        catch (Exception ex) { Log.Error($"GetBuildRunsOnBranchSince: {ex.Message}"); }
         return result;
     }
 
@@ -420,6 +425,7 @@ public sealed class AdoApiClient : IDisposable
                 Result = buildResult,
                 SourceBranch = b.TryGetProperty("sourceBranch", out var sb) ? sb.GetString() ?? "" : "",
                 RequestedBy = requestedBy,
+                QueueTime = b.TryGetProperty("queueTime", out var qt) ? qt.GetDateTime() : DateTime.MinValue,
                 FinishTime = b.TryGetProperty("finishTime", out var ft) ? ft.GetDateTime() : DateTime.MinValue,
                 WebUrl = webUrl,
             });

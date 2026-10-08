@@ -1800,12 +1800,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         AddPrs(cats.ReadyToReview, ReadyToReviewPrs);
         AddPrs(cats.MyActive, MyActivePrs);
 
-        // Combine my failed builds + watched pipeline failures
-        // Deduplicate by definition — keep the latest build per pipeline
-        var allFailed = result.MyFailedBuilds.Concat(result.WatchedPipelineFailures)
-            .GroupBy(b => b.DefinitionId)
-            .Select(g => g.OrderByDescending(b => b.Id).First())
-            .ToList();
+        // Combine my failed builds + watched pipeline failures, one card per pipeline and branch:
+        // two branches failing on the same pipeline are two separate problems.
+        var allFailed = BuildSupersession.OnePerBranch(
+            result.MyFailedBuilds.Concat(result.WatchedPipelineFailures));
 
         // Split into critical (no retry), de-escalated (retry in progress), or acknowledged
         foreach (var build in allFailed)

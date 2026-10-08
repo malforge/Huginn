@@ -13,10 +13,11 @@ public sealed partial class BuildItem : ObservableObject
     public BuildResult Result { get; init; }
     public string SourceBranch { get; init; } = "";
     public string RequestedBy { get; init; } = "";
+    public DateTime QueueTime { get; init; }
     public DateTime FinishTime { get; init; }
     public string WebUrl { get; init; } = "";
 
-    /// <summary>A newer build is currently running for this definition.</summary>
+    /// <summary>A newer run is under way on this pipeline and branch, and the run before it failed.</summary>
     public bool RetryInProgress { get; set; }
 
     /// <summary>URL of the superseding build (retry), if one exists.</summary>

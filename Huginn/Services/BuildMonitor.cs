@@ -46,18 +46,22 @@ public sealed class BuildMonitor
             watchedFailures = latest.Where(b => b.Result == BuildResult.Failed).ToList();
         }
 
-        // Collect all failed definition IDs so we can check for superseding builds
-        var allFailed = myFailed.Concat(watchedFailures).ToList();
-        var failedDefIds = allFailed.Select(b => b.DefinitionId).Where(id => id > 0).Distinct().ToList();
+        // What came after each failure is asked for per pipeline and branch, from the earliest
+        // failure there, since another branch's runs say nothing about this one.
+        var failingBranches = myFailed.Concat(watchedFailures)
+            .Where(b => b.DefinitionId > 0)
+            .GroupBy(b => (b.DefinitionId, b.SourceBranch))
+            .ToList();
 
-        if (failedDefIds.Count > 0)
+        if (failingBranches.Count > 0)
         {
-            var latestStatuses = await client.GetLatestBuildStatusPerDefinitionAsync(failedDefIds, ct);
-            var statusByDef = latestStatuses.ToDictionary(x => x.DefinitionId, x => x);
+            var fetched = await Task.WhenAll(failingBranches.Select(g =>
+                client.GetBuildRunsOnBranchSinceAsync(
+                    g.Key.DefinitionId, g.Key.SourceBranch, g.Min(b => b.QueueTime), ct)));
+            var runs = fetched.SelectMany(r => r).ToList();
 
-            // Filter out failures where a newer build has already succeeded
-            myFailed = FilterAndAnnotate(myFailed, statusByDef);
-            watchedFailures = FilterAndAnnotate(watchedFailures, statusByDef);
+            myFailed = BuildSupersession.Apply(myFailed, runs);
+            watchedFailures = BuildSupersession.Apply(watchedFailures, runs);
         }
 
         var newFailures = new List<BuildItem>();
@@ -79,40 +83,6 @@ public sealed class BuildMonitor
         return new BuildSnapshot(myFailed, watchedFailures, newFailures);
     }
 
-    /// <summary>
-    /// Removes failures that have been superseded by a newer successful build,
-    /// and marks failures where a newer build is in progress.
-    /// </summary>
-    private static List<BuildItem> FilterAndAnnotate(
-        List<BuildItem> failures,
-        Dictionary<int, (int DefinitionId, int BuildId, string Status, BuildResult Result, string WebUrl)> latestByDef)
-    {
-        var result = new List<BuildItem>();
-        foreach (var build in failures)
-        {
-            if (!latestByDef.TryGetValue(build.DefinitionId, out var latest))
-            {
-                result.Add(build);
-                continue;
-            }
-
-            // A newer build (higher ID) has completed successfully — drop this failure
-            if (latest.BuildId > build.Id && latest.Result == BuildResult.Succeeded)
-                continue;
-
-            // A newer build is queued or running — mark as retry in progress
-            if (latest.BuildId > build.Id &&
-                latest.Status is "inProgress" or "notStarted" or "postponed")
-            {
-                build.RetryInProgress = true;
-                build.RetryBuildUrl = latest.WebUrl;
-            }
-
-            result.Add(build);
-        }
-        return result;
-    }
-
     public void Reset()
     {
         _knownFailedBuildIds.Clear();
@@ -122,7 +92,8 @@ public sealed class BuildMonitor
     public StatusParts GetStatusParts(BuildSnapshot snap)
     {
         var parts = new StatusParts();
-        var total = snap.MyFailedBuilds.Count + snap.WatchedPipelineFailures.Count;
+        var total = BuildSupersession.OnePerBranch(
+            snap.MyFailedBuilds.Concat(snap.WatchedPipelineFailures)).Count;
         if (total > 0)
             parts.Add($"{total} build failure{(total != 1 ? "s" : "")}");
         return parts;
