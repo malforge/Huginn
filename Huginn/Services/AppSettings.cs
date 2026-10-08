@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Huginn.Models;
@@ -207,6 +208,23 @@ public sealed partial class AppSettings
     /// mode, and neither can be set from the URL, so the query looks absent when it is not.
     /// </remarks>
     public bool ExplainPortalView { get; set; } = true;
+
+    /// <summary>
+    /// What an agent presents to reach the MCP endpoint. Made once and kept, so a registration
+    /// stays valid across restarts and updates.
+    /// </summary>
+    public string AgentToken { get; private set; } = "";
+
+    /// <summary>The agent token, made and saved the first time it is asked for.</summary>
+    public string EnsureAgentToken()
+    {
+        if (AgentToken.Length == 0)
+        {
+            AgentToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            Save();
+        }
+        return AgentToken;
+    }
 
     public AppSettings(ICredentialStore credentialStore)
     {
@@ -483,6 +501,7 @@ public sealed partial class AppSettings
             AcknowledgedBuildIds = AcknowledgedBuildIds,
             AcknowledgedPrIds = AcknowledgedPrIds,
             ExplainPortalView = ExplainPortalView,
+            AgentToken = AgentToken,
         }, SettingsJsonContext.Default.SettingsDto);
         File.WriteAllText(SettingsPath, json);
     }
@@ -536,6 +555,7 @@ public sealed partial class AppSettings
                 AcknowledgedBuildIds = dto.AcknowledgedBuildIds ?? [],
                 AcknowledgedPrIds = dto.AcknowledgedPrIds ?? [],
                 ExplainPortalView = dto.ExplainPortalView,
+                AgentToken = dto.AgentToken ?? "",
             };
         }
         catch
@@ -580,6 +600,7 @@ public sealed partial class AppSettings
         public List<int>? AcknowledgedBuildIds { get; set; }
         public List<int>? AcknowledgedPrIds { get; set; }
         public bool ExplainPortalView { get; set; } = true;
+        public string? AgentToken { get; set; }
     }
 
     [JsonSerializable(typeof(SettingsDto))]

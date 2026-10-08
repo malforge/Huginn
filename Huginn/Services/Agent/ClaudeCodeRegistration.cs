@@ -12,6 +12,11 @@ namespace Huginn.Services.Agent;
 /// Registers this build as an MCP server with Claude Code, so an agent can ask Huginn what is
 /// broken. Writes the user's Claude configuration, so it only ever runs when they ask it to.
 /// </summary>
+/// <remarks>
+/// Claude Code is pointed at the running app over HTTP rather than told to start Huginn itself
+/// over stdio. An update stops every copy of Huginn, and Claude Code reconnects to an HTTP server
+/// that comes back but never restarts a stdio one, so only the HTTP registration survives it.
+/// </remarks>
 public static class ClaudeCodeRegistration
 {
     /// <summary>The name the server is registered under.</summary>
@@ -31,13 +36,18 @@ public static class ClaudeCodeRegistration
     /// <summary>The flag that makes Huginn serve MCP on stdio instead of opening a window.</summary>
     public const string ServeArgument = "--mcp";
 
+    /// <summary>The header that admits a caller, carrying the token this copy hands out.</summary>
+    public static string AuthorizationHeader(string token) => $"Authorization: Bearer {token}";
+
     /// <summary>The Claude Code one-liner, for someone who would rather run it themselves.</summary>
-    public static string CliCommand =>
-        $"claude mcp add -s {Scope} {ServerName} -- \"{ExecutablePath}\" {ServeArgument}";
+    public static string CliCommand(string token) =>
+        $"claude mcp add --transport http -s {Scope} {ServerName} {McpEndpoint.Url} "
+        + $"--header \"{AuthorizationHeader(token)}\"";
 
     /// <summary>
-    /// The same thing as configuration, for a client that is not Claude Code. Nearly every MCP
-    /// client takes this shape, so it is more use than instructions for one of them.
+    /// The stdio form as configuration, for a client that is not Claude Code. Nearly every MCP
+    /// client takes this shape, so it is more use than instructions for one of them, though such
+    /// a client has to be reconnected after an update.
     /// </summary>
     public static string ConfigJson =>
         $$"""
@@ -86,72 +96,80 @@ public static class ClaudeCodeRegistration
 
     /// <summary>What Claude Code currently has registered under this name.</summary>
     /// <param name="Registered">Whether an entry exists at all.</param>
-    /// <param name="Command">The executable it points at, empty when that was not reported.</param>
-    /// <param name="PointsHere">The entry names the executable now running.</param>
-    public readonly record struct Registration(bool Registered, string Command, bool PointsHere);
-
-    /// <summary>
-    /// Reads the existing registration, including which executable it names.
-    /// </summary>
-    /// <remarks>
-    /// The command is only reported for some kinds of entry, so an empty
-    /// <see cref="Registration.Command"/> means unknown rather than none, and
-    /// <see cref="Registration.PointsHere"/> is false in that case rather than guessing.
-    /// </remarks>
-    public static async Task<Registration> ReadRegistrationAsync(CancellationToken ct = default)
+    /// <param name="Type">The transport, http or stdio, empty when that was not reported.</param>
+    /// <param name="Target">The address or executable it points at, empty when not reported.</param>
+    /// <param name="Connected">Claude Code could reach it when asked just now.</param>
+    public readonly record struct Registration(bool Registered, string Type, string Target, bool Connected)
     {
-        if (FindClaude() is not { } claude) return new Registration(false, "", false);
+        /// <summary>Reaches this copy over HTTP, so there is nothing left to do.</summary>
+        public bool PointsHere =>
+            Connected
+            && string.Equals(Type, "http", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Target, McpEndpoint.Url, StringComparison.OrdinalIgnoreCase);
 
-        (int code, string output, _) = await RunAsync(claude, ["mcp", "get", ServerName], ct);
-        if (code != 0) return new Registration(false, "", false);
-
-        string command = "";
-        foreach (string line in output.Split('\n'))
-        {
-            string trimmed = line.Trim();
-            if (!trimmed.StartsWith("Command:", StringComparison.OrdinalIgnoreCase)) continue;
-
-            command = trimmed["Command:".Length..].Trim();
-            break;
-        }
-
-        bool here = command.Length > 0
-                    && Environment.ProcessPath is { } running
-                    && string.Equals(
-                        Path.GetFullPath(command), Path.GetFullPath(running),
-                        StringComparison.OrdinalIgnoreCase);
-
-        return new Registration(true, command, here);
+        public bool IsStdio => string.Equals(Type, "stdio", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
-    /// Points Claude Code at the executable currently running, replacing any existing entry.
+    /// Reads the existing registration: its transport, what it points at, and whether Claude Code
+    /// could reach it. Asking makes Claude Code connect, so the answer reflects the token too.
+    /// </summary>
+    public static async Task<Registration> ReadRegistrationAsync(CancellationToken ct = default)
+    {
+        if (FindClaude() is not { } claude) return default;
+
+        (int code, string output, _) = await RunAsync(claude, ["mcp", "get", ServerName], ct);
+        return code == 0 ? Parse(output) : default;
+    }
+
+    /// <summary>The registration an existing entry describes, from what <c>claude mcp get</c> printed.</summary>
+    public static Registration Parse(string output)
+    {
+        string type = Field(output, "Type");
+        string target = string.Equals(type, "stdio", StringComparison.OrdinalIgnoreCase)
+            ? Field(output, "Command")
+            : Field(output, "URL");
+        bool connected = Field(output, "Status").Contains("Connected", StringComparison.OrdinalIgnoreCase);
+
+        return new Registration(true, type, target, connected);
+    }
+
+    /// <summary>The value of a "Name: value" line in what <c>claude mcp get</c> printed.</summary>
+    private static string Field(string output, string name)
+    {
+        foreach (string line in output.Split('\n'))
+        {
+            string trimmed = line.Trim();
+            if (trimmed.StartsWith(name + ":", StringComparison.OrdinalIgnoreCase))
+                return trimmed[(name.Length + 1)..].Trim();
+        }
+        return "";
+    }
+
+    /// <summary>
+    /// Points Claude Code at this copy's HTTP endpoint, replacing any existing entry.
     /// </summary>
     /// <remarks>
-    /// Removes first, because <c>claude mcp get</c> reports only scope and status, never which
-    /// executable is registered. Without that there is no way to tell a stale entry from a current
-    /// one, so the only honest thing the button can offer is to overwrite it with this copy.
+    /// Removes first, since <c>claude mcp add</c> refuses a name that is already taken. The
+    /// endpoint is this copy's own, so a development build under a profile registers its own port.
     /// </remarks>
-    public static async Task<(bool Ok, string Message)> RegisterAsync(CancellationToken ct = default)
+    public static async Task<(bool Ok, string Message)> RegisterAsync(string token, CancellationToken ct = default)
     {
         if (FindClaude() is not { } claude)
             return (false, "Claude Code was not found on this machine.");
 
-        if (Environment.ProcessPath is not { } huginn)
-            return (false, "Could not work out where this copy of Huginn is running from.");
-
         // A failure here just means there was nothing registered, which is the common case.
         await RunAsync(claude, ["mcp", "remove", ServerName], ct);
 
-        // The running executable rather than a guessed install path, so a development build
-        // registers itself and an installed one registers the installed one.
         (int code, string output, string error) = await RunAsync(
             claude,
-            ["mcp", "add", "-s", Scope, ServerName, "--", huginn, ServeArgument],
+            ["mcp", "add", "--transport", "http", "-s", Scope, ServerName, McpEndpoint.Url,
+             "--header", AuthorizationHeader(token)],
             ct);
 
         return code == 0
-            ? (true, $"Claude Code now points at this copy: {huginn}")
+            ? (true, $"Claude Code now reaches this copy at {McpEndpoint.Url}. "
+                     + "New sessions connect at once; open ones after /mcp.")
             : (false, Explain(output, error));
     }
 

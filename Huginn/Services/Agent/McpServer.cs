@@ -11,7 +11,8 @@ using System.Text.Json.Nodes;
 namespace Huginn.Services.Agent;
 
 /// <summary>
-/// Serves the snapshot to agents over stdio as an MCP server, started with <c>--mcp</c>.
+/// Serves the snapshot to agents as an MCP server: over stdio when started with <c>--mcp</c>, and
+/// over HTTP from the running app through <see cref="McpHttpHost"/>.
 /// </summary>
 /// <remarks>
 /// Works on the JSON document rather than the typed models: it keeps answering unchanged when the
@@ -33,21 +34,29 @@ public static class McpServer
         {
             if (line.Length == 0) continue;
 
-            JsonNode? response;
-            try
-            {
-                response = Handle(JsonNode.Parse(line));
-            }
-            catch (Exception ex)
-            {
-                response = Error(null, -32603, ex.Message);
-            }
-
-            // A notification carries no id and takes no reply.
-            if (response != null) writer.WriteLine(response.ToJsonString());
+            if (Respond(line) is { } response) writer.WriteLine(response);
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Answers one JSON-RPC message, whichever transport it came over. Null for a notification,
+    /// which carries no id and takes no reply.
+    /// </summary>
+    public static string? Respond(string message)
+    {
+        JsonNode? response;
+        try
+        {
+            response = Handle(JsonNode.Parse(message));
+        }
+        catch (Exception ex)
+        {
+            response = Error(null, -32603, ex.Message);
+        }
+
+        return response?.ToJsonString();
     }
 
     private static JsonNode? Handle(JsonNode? request)

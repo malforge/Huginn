@@ -647,7 +647,7 @@
                         <StackPanel IsVisible="{Binding IsAgentsPage}" Spacing="8">
                             <TextBlock Classes="pagetitle" Text="Agents"/>
                             <TextBlock Classes="pagenote"
-                                       Text="Huginn can answer an AI coding agent asking what is currently broken, over MCP. It serves what the dashboard already shows, so this needs no extra sign-in and opens no network port."/>
+                                       Text="Huginn can answer an AI coding agent asking what is currently broken, over MCP. It serves what the dashboard already shows, so this needs no extra sign-in. Claude Code reaches it at an address on this machine only, with a token Huginn hands it when registering, which keeps it connected through an update."/>
 
                             <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0">
                                 <StackPanel Grid.Column="0" Spacing="8">
@@ -678,6 +678,22 @@
 
                                     <Border Classes="card">
                                         <StackPanel Spacing="8">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Grid.Column="0" Classes="fieldlabel"
+                                                           Text="Claude Code, from a terminal" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1" Content="Copy" FontSize="11" Padding="8,2"
+                                                        Command="{Binding CopyAgentCommandCommand}"/>
+                                            </Grid>
+                                            <SelectableTextBlock Text="{Binding AgentCliCommand}" FontSize="11"
+                                                                 FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
+
+                                            <TextBlock Classes="fieldlabel" Text="Address" Margin="0,4,0,0"/>
+                                            <SelectableTextBlock Text="{Binding AgentEndpointUrl}" FontSize="11"
+                                                                 FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
+
+                                            <TextBlock Classes="pagenote" Margin="0,8,0,0"
+                                                       Text="Any other MCP client can start Huginn itself over stdio instead. An update stops that copy, so reconnect the client after updating."/>
+
                                             <TextBlock Classes="fieldlabel" Text="Command"/>
                                             <SelectableTextBlock Text="{Binding AgentExecutablePath}" FontSize="11"
                                                                  FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
@@ -688,16 +704,7 @@
 
                                             <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                                                 <TextBlock Grid.Column="0" Classes="fieldlabel"
-                                                           Text="Claude Code, from a terminal" VerticalAlignment="Center"/>
-                                                <Button Grid.Column="1" Content="Copy" FontSize="11" Padding="8,2"
-                                                        Command="{Binding CopyAgentCommandCommand}"/>
-                                            </Grid>
-                                            <SelectableTextBlock Text="{Binding AgentCliCommand}" FontSize="11"
-                                                                 FontFamily="Consolas,Menlo,monospace" TextWrapping="Wrap"/>
-
-                                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                                <TextBlock Grid.Column="0" Classes="fieldlabel"
-                                                           Text="Any other MCP client" VerticalAlignment="Center"/>
+                                                           Text="As configuration" VerticalAlignment="Center"/>
                                                 <Button Grid.Column="1" Content="Copy" FontSize="11" Padding="8,2"
                                                         Command="{Binding CopyAgentConfigCommand}"/>
                                             </Grid>

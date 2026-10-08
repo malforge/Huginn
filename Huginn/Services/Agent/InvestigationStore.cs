@@ -8,8 +8,9 @@ namespace Huginn.Services.Agent;
 /// The channel an agent uses to ask a running Huginn to look closer at one finding.
 /// </summary>
 /// <remarks>
-/// Two files beside the snapshot, for the same reason it is a file: the MCP process holds no
-/// credentials and opens no port. It asks; the running Huginn, which is signed in, answers.
+/// Two files beside the snapshot, for the same reason it is a file: the stdio MCP process holds no
+/// credentials and opens no port. It asks; the running Huginn, which is signed in, answers. The
+/// app's own HTTP endpoint goes through the same files, so both transports behave alike.
 /// </remarks>
 public static class InvestigationStore
 {

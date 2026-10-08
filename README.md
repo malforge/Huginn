@@ -138,12 +138,14 @@ poll. It can also serve that over [MCP](https://modelcontextprotocol.io), so a c
 what is currently broken instead of being told.
 
 Open **Settings -> Agents** and press **Register with Claude Code**. That writes your own Claude
-configuration, for your user rather than the folder Huginn happened to launch from, and it points at
-whichever copy of Huginn is running.
+configuration, for your user rather than the folder Huginn happened to launch from. Claude Code then
+reaches the running app over HTTP at `http://localhost:38457/mcp`, with a token Huginn hands it when
+registering. An update restarts Huginn, and Claude Code reconnects to it on its own.
 
 The same panel prints everything needed to set it up by hand, for a different agent or when the
-button will not do: the command, the `--mcp` argument, the Claude Code one-liner, and the server as
-configuration, which is the shape nearly every MCP client takes.
+button will not do: the Claude Code one-liner, and for any other MCP client the command, the
+`--mcp` argument and the server as configuration, which is the shape nearly every MCP client takes.
+A client that starts Huginn itself this way loses it on every update, so reconnect it afterwards.
 
 ```json
 {
@@ -171,13 +173,16 @@ The tools:
 Every answer opens with how old the snapshot is, and says so plainly once it is stale, because an
 empty list from a source that stopped answering looks exactly like nothing being wrong.
 
-Reading needs no credentials and opens no port: `--mcp` only reads the file the running app wrote,
-and exits when the agent disconnects. `huginn_refresh` and `huginn_investigate` are the two that
-talk back, by leaving a request the running app picks up. If Huginn is not running, it says so
-rather than pretending.
+Reading needs no credentials of the agent's own. The HTTP address listens on this machine only and
+answers only a caller presenting the token, since any program on the machine can reach a local
+port. It is served by the running app, so with Huginn closed Claude Code finds nothing there.
+`--mcp` instead reads the file the running app wrote, and exits when the agent disconnects.
+`huginn_refresh` and `huginn_investigate` are the two that talk back, by leaving a request the
+running app picks up. If Huginn is not running, they say so rather than pretending.
 
 Set `HUGINN_PROFILE` to keep a second install's settings, credentials and snapshot separate from
-the first.
+the first. Each profile also gets an HTTP port of its own, so a second copy can run beside the
+first.
 
 ## Keeping internal names out
 

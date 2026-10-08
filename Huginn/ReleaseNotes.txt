@@ -1,3 +1,8 @@
+v.1.6.0
+   - Claude Code now reaches Huginn over HTTP, at an address on this machine only, and stays connected through an update. It used to start Huginn itself, and an update stopped that copy, which Claude Code never starts again, so every session lost Huginn until it was reconnected by hand. Press Point at this copy under Settings, Agents once to switch over.
+   - The address answers only a caller holding the token Huginn hands Claude Code when registering, since any program on the machine can reach a local port. A named HUGINN_PROFILE gets a port of its own.
+   - Agents are only reachable this way while Huginn is running. Any other MCP client can still start Huginn itself, and has to be reconnected after an update.
+
 v.1.5.4
    - Fixed: the Update available button disappeared for a few seconds every half hour while Huginn looked for a newer version, moving the Refresh button beside it, and stayed gone if that check failed, even though the downloaded update was still there to install. Once an update is downloaded, later checks run quietly and the button only changes when a newer release replaces it.
 

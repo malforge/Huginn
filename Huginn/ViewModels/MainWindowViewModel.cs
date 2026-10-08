@@ -1528,7 +1528,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     public string AgentExecutablePath => ClaudeCodeRegistration.ExecutablePath;
 
     /// <summary>The Claude Code one-liner, for anyone who would rather run it themselves.</summary>
-    public string AgentCliCommand => ClaudeCodeRegistration.CliCommand;
+    public string AgentCliCommand => ClaudeCodeRegistration.CliCommand(_settings.EnsureAgentToken());
+
+    /// <summary>Where Claude Code reaches this copy.</summary>
+    public string AgentEndpointUrl => McpEndpoint.Url;
 
     /// <summary>The same server as configuration, for a client that is not Claude Code.</summary>
     public string AgentConfigJson => ClaudeCodeRegistration.ConfigJson;
@@ -1578,6 +1581,12 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (!ClaudeCodeFound) return;
 
+        if (App.AgentEndpointError is { } error)
+        {
+            AgentRegistrationStatus = error;
+            return;
+        }
+
         var registration = await ClaudeCodeRegistration.ReadRegistrationAsync();
 
         AgentRegistered = registration.Registered;
@@ -1586,9 +1595,15 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         AgentRegistrationStatus = registration switch
         {
             { Registered: false } => "Not registered yet.",
-            { PointsHere: true } => "Registered, pointing at this copy.",
-            { Command.Length: > 0 } r => $"Registered, but pointing at another copy: {r.Command}",
-            _ => "Registered. Claude Code did not say which copy it points at.",
+            { PointsHere: true } => $"Registered, reaching this copy at {McpEndpoint.Url}.",
+            { IsStdio: true } =>
+                "Registered the old way, as a program Claude Code starts. An update stops it and "
+                + "Claude Code does not start it again. Point it at this copy to switch over.",
+            { Target.Length: > 0 } r when !string.Equals(r.Target, McpEndpoint.Url, StringComparison.OrdinalIgnoreCase) =>
+                $"Registered, but pointing at another address: {r.Target}",
+            { Target.Length: > 0 } =>
+                "Registered here, but Claude Code could not connect. Pointing it at this copy again renews the token.",
+            _ => "Registered. Claude Code did not say where it points.",
         };
     }
 
@@ -1600,7 +1615,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         AgentBusy = true;
         try
         {
-            (bool ok, string message) = await ClaudeCodeRegistration.RegisterAsync();
+            (bool ok, string message) = await ClaudeCodeRegistration.RegisterAsync(_settings.EnsureAgentToken());
             AgentRegistrationStatus = message;
             if (!ok) return;
 
