@@ -16,9 +16,11 @@ Built on [Avalonia](https://avaloniaui.net/) and .NET 10.
   status-by-priority sections: failed validation, missing reviewers,
   autocomplete off, awaiting review, plus a separate group for your active
   PRs and one for items you've acknowledged.
-- **Build failure monitoring**: your personal build failures + any pipelines
-  you choose to watch. Retrying builds are de-escalated to a warning section
-  while the rerun is in flight.
+- **Build failure monitoring**: every pipeline and branch where one of your
+  builds failed, plus any pipelines you choose to watch. Each card shows where
+  the branch stands now: its newest failure, whoever ran it, until a later run
+  passes. A failure whose rerun is in flight is de-escalated to a warning
+  section.
 - **Crash monitoring** (Sentry): issues are raised either because they
   changed (new, returned after being resolved, or outgrew a mute) or because
   they are big, measured by how many people they reach. Each carries a

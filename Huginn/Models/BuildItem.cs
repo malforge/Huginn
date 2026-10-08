@@ -11,6 +11,10 @@ public sealed partial class BuildItem : ObservableObject
     public int DefinitionId { get; init; }
     public string DefinitionName { get; init; } = "";
     public BuildResult Result { get; init; }
+
+    /// <summary>The run's state as Azure DevOps names it: notStarted, inProgress, completed and so on.</summary>
+    public string Status { get; init; } = "";
+
     public string SourceBranch { get; init; } = "";
     public string RequestedBy { get; init; } = "";
     public DateTime QueueTime { get; init; }
@@ -31,6 +35,11 @@ public sealed partial class BuildItem : ObservableObject
     public string AcknowledgeTooltip => IsAcknowledged
         ? "Unacknowledge — bring back into the badge"
         : "Acknowledge — hide from the badge until the next run";
+
+    /// <summary>Queued or running: it has no answer yet.</summary>
+    public bool IsPending => Status is "inProgress" or "notStarted" or "postponed";
+
+    public bool IsCompleted => Status == "completed";
 
     public string BranchShortName => SourceBranch.StartsWith("refs/heads/", StringComparison.Ordinal)
         ? SourceBranch["refs/heads/".Length..]

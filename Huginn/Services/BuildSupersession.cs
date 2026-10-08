@@ -12,37 +12,40 @@ namespace Huginn.Services;
 public static class BuildSupersession
 {
     /// <summary>
-    /// Drops failures a later success on their branch has fixed, keeps only the newest failure
-    /// per branch, and marks a failure as retrying when a run is under way and the last
-    /// completed run on its branch failed.
+    /// One card per failing pipeline and branch, showing where the branch stands now rather than
+    /// the failure that drew attention to it. The card is the newest failed run there, whoever
+    /// ran it; it is dropped when a later run passed, and marked as retrying when a run is under
+    /// way and the run before it failed.
     /// </summary>
-    public static List<BuildItem> Apply(IReadOnlyList<BuildItem> failures, IReadOnlyCollection<BuildRun> runs)
+    public static List<BuildItem> Apply(IReadOnlyList<BuildItem> failures, IReadOnlyCollection<BuildItem> runs)
     {
-        var current = OnePerBranch(failures).ToHashSet();
         var result = new List<BuildItem>();
-        foreach (var build in failures.Where(current.Contains))
+        foreach (var known in OnePerBranch(failures))
         {
-            var later = runs
-                .Where(r => r.Id > build.Id
-                            && r.DefinitionId == build.DefinitionId
-                            && r.SourceBranch == build.SourceBranch)
+            var onBranch = runs
+                .Where(r => r.Id >= known.Id
+                            && r.DefinitionId == known.DefinitionId
+                            && r.SourceBranch == known.SourceBranch)
                 .ToList();
 
-            var lastCompleted = later.Where(r => r.IsCompleted).MaxBy(r => r.Id);
-            if (lastCompleted?.Result == BuildResult.Succeeded)
+            var card = onBranch
+                .Where(r => r.IsCompleted && r.Result == BuildResult.Failed)
+                .MaxBy(r => r.Id) ?? known;
+
+            var after = onBranch.Where(r => r.Id > card.Id).ToList();
+            if (after.Any(r => r.IsCompleted && r.Result == BuildResult.Succeeded))
                 continue;
 
             // A run is a retry only when the run before it failed. One that follows a canceled
             // or partially successful run is just the next run.
-            var lastResult = lastCompleted?.Result ?? build.Result;
-            var retry = later.Where(r => r.IsPending).MaxBy(r => r.Id);
-            if (retry is not null && lastResult == BuildResult.Failed)
+            var retry = after.Where(r => r.IsPending).MaxBy(r => r.Id);
+            if (retry is not null && !after.Any(r => r.IsCompleted))
             {
-                build.RetryInProgress = true;
-                build.RetryBuildUrl = retry.WebUrl;
+                card.RetryInProgress = true;
+                card.RetryBuildUrl = retry.WebUrl;
             }
 
-            result.Add(build);
+            result.Add(card);
         }
         return result;
     }

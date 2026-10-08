@@ -451,7 +451,10 @@ public static class McpServer
             text.AppendLine("BUILDS");
             foreach (JsonNode? build in builds)
                 text.AppendLine($"  [{Str(build, "status")}] {Str(build, "definition")} "
-                                + $"on {Str(build, "branch")}");
+                                + $"on {Str(build, "branch")}"
+                                + (Bool(build, "retrying") && Str(build, "status") != "retrying"
+                                    ? ", retrying"
+                                    : ""));
         }
 
         return text.ToString().TrimEnd();

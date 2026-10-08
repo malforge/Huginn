@@ -54,8 +54,11 @@ public static class SnapshotBuilder
                     Branch = b.BranchShortName,
                     RequestedBy = b.RequestedBy,
                     Age = b.Age,
+                    FinishedAt = b.FinishTime,
                     Status = q.Status,
+                    Retrying = b.RetryInProgress,
                     Url = b.WebUrl,
+                    RetryUrl = b.RetryBuildUrl,
                 })),
             ],
             Crashes =

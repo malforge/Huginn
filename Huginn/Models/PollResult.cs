@@ -12,7 +12,10 @@ public sealed class PollResult
     public required List<PullRequestItem> StaffedMyPrs { get; init; }
     public required string UserId { get; init; }
 
-    /// <summary>My triggered builds that recently failed.</summary>
+    /// <summary>
+    /// Pipelines and branches where one of my builds recently failed, each as its newest failure,
+    /// which may be a run someone else started.
+    /// </summary>
     public List<BuildItem> MyFailedBuilds { get; init; } = [];
 
     /// <summary>Latest build per watched pipeline (only those that failed).</summary>

@@ -331,10 +331,10 @@ public sealed class AdoApiClient : IDisposable
     /// state, including queued and running ones. Used to decide whether a failure has been fixed
     /// or is being retried.
     /// </summary>
-    public async Task<List<BuildRun>> GetBuildRunsOnBranchSinceAsync(
+    public async Task<List<BuildItem>> GetBuildRunsOnBranchSinceAsync(
         int definitionId, string branch, DateTime since, CancellationToken ct = default)
     {
-        var result = new List<BuildRun>();
+        var result = new List<BuildItem>();
         try
         {
             // No statusFilter, so runs in every state come back. With queueTimeDescending,
@@ -349,34 +349,7 @@ public sealed class AdoApiClient : IDisposable
             if (!resp.IsSuccessStatusCode) return result;
 
             using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            foreach (var b in doc.RootElement.GetProperty("value").EnumerateArray())
-            {
-                var defId = 0;
-                if (b.TryGetProperty("definition", out var def))
-                    defId = def.TryGetProperty("id", out var did) ? did.GetInt32() : 0;
-
-                var buildId = b.GetProperty("id").GetInt32();
-                var status = b.TryGetProperty("status", out var s) ? s.GetString() ?? "" : "";
-                var resultStr = b.TryGetProperty("result", out var r) ? r.GetString() ?? "" : "";
-                var buildResult = resultStr switch
-                {
-                    "succeeded" => BuildResult.Succeeded,
-                    "partiallySucceeded" => BuildResult.PartiallySucceeded,
-                    "failed" => BuildResult.Failed,
-                    "canceled" => BuildResult.Canceled,
-                    _ => BuildResult.None,
-                };
-
-                var webUrl = "";
-                if (b.TryGetProperty("_links", out var links)
-                    && links.TryGetProperty("web", out var web)
-                    && web.TryGetProperty("href", out var href))
-                    webUrl = href.GetString() ?? "";
-
-                var sourceBranch = b.TryGetProperty("sourceBranch", out var sb) ? sb.GetString() ?? "" : "";
-
-                result.Add(new BuildRun(buildId, defId, sourceBranch, status, buildResult, webUrl));
-            }
+            result = ParseBuilds(doc);
             Log.Info($"  Runs on {branch} since {since:O}: {result.Count}");
         }
         catch (OperationCanceledException) { throw; }
@@ -424,6 +397,7 @@ public sealed class AdoApiClient : IDisposable
                 DefinitionName = defName,
                 Result = buildResult,
                 SourceBranch = b.TryGetProperty("sourceBranch", out var sb) ? sb.GetString() ?? "" : "",
+                Status = b.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "",
                 RequestedBy = requestedBy,
                 QueueTime = b.TryGetProperty("queueTime", out var qt) ? qt.GetDateTime() : DateTime.MinValue,
                 FinishTime = b.TryGetProperty("finishTime", out var ft) ? ft.GetDateTime() : DateTime.MinValue,

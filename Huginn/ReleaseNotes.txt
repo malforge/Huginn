@@ -1,3 +1,7 @@
+v.1.5.2
+   - Fixed: a build card could show an old failure of yours on a branch that had since passed and then failed again in someone else's run, so the card gave the age of the wrong failure. A card now shows where the branch stands: its newest failure, whoever ran it, and it clears when a later run passes.
+   - Agents see everything a build card shows: whether an acknowledged failure is being retried, the link to the run under way, and when the failure finished.
+
 v.1.5.1
    - Fixed: a failed build was shown as being retried whenever anything at all was running on its pipeline, even after a later run on the same branch had passed. Builds are now compared within their own pipeline and branch. A failure counts as retried only when a run is under way and the run before it failed, and it is cleared by a pass on its own branch, not by a pass on another.
    - Two branches failing on the same pipeline are now two cards. Only the newest failure per pipeline was shown before, so one failing pull request could hide another.
