@@ -1,3 +1,6 @@
+v.1.5.3
+   - A pull request is numbered !12345 on its card, the way Azure DevOps writes it. It was #12345, which is how a work item is written.
+
 v.1.5.2
    - Fixed: a build card could show an old failure of yours on a branch that had since passed and then failed again in someone else's run, so the card gave the age of the wrong failure. A card now shows where the branch stands: its newest failure, whoever ran it, and it clears when a later run passes.
    - Agents see everything a build card shows: whether an acknowledged failure is being retried, the link to the run under way, and when the failure finished.

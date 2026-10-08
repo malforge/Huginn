@@ -240,12 +240,12 @@ public sealed class AdoApiClient : IDisposable
                 pr.PipelineStatus = PipelineState.Running;
             }
 
-            Log.Info($"  PR #{pr.PullRequestId} pipeline: {pr.PipelineStatus} ({checks.Count} build checks)");
+            Log.Info($"  PR !{pr.PullRequestId} pipeline: {pr.PipelineStatus} ({checks.Count} build checks)");
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            Log.Error($"FetchPolicyEvals PR #{pr.PullRequestId}: {ex.Message}");
+            Log.Error($"FetchPolicyEvals PR !{pr.PullRequestId}: {ex.Message}");
         }
     }
 
