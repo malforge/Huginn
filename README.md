@@ -31,8 +31,8 @@ Built on [Avalonia](https://avaloniaui.net/) and .NET 10.
   sparkline of the last 24 hours and a phrase for its shape, so a constant
   drip reads differently from a single burst.
 - **Service monitoring** (Azure Application Insights): failing routes, slow
-  routes at the 95th percentile, failing dependencies, and resources that
-  have gone silent. Ordered by severity rather than raw magnitude, and
+  routes at the 95th percentile, failing dependencies, exceptions thrown
+  outside any failed request, and resources that have gone silent. Ordered by severity rather than raw magnitude, and
   failures name their result codes. Rules are judged on requests actually
   recorded rather than on counts scaled up by sampling, and each card says
   what it rests on: how much was recorded, the users seen failing, and when it

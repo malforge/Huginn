@@ -162,7 +162,7 @@ public static class McpServer
             + "the users seen failing and when it last failed. Returns JSON.",
             new JsonObject
             {
-                ["kind"] = Prop("string", "Filter: FailureRate, Latency, Dependency or NoTraffic."),
+                ["kind"] = Prop("string", "Filter: FailureRate, Latency, Dependency, Exception or NoTraffic."),
                 ["includeMuted"] = Prop("boolean", "Include muted findings. Default false."),
                 ["limit"] = Prop("integer", "Maximum findings to return. Default 20."),
             }),
@@ -185,11 +185,11 @@ public static class McpServer
             new JsonObject
             {
                 ["subject"] = Prop("string",
-                    "The route or dependency, exactly as huginn_services gives it."),
+                    "The route, dependency or exception problem, exactly as huginn_services gives it."),
                 ["resource"] = Prop("string",
                     "Which resource, when the same subject is a finding on more than one."),
                 ["kind"] = Prop("string",
-                    "FailureRate, Latency, Dependency or NoTraffic, to pick between findings "
+                    "FailureRate, Latency, Dependency, Exception or NoTraffic, to pick between findings "
                     + "that share a subject."),
                 ["waitSeconds"] = Prop("integer", "How long to wait for Huginn. Default 60."),
             },

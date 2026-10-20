@@ -777,6 +777,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             FindingKind.Latency => "slow",
             FindingKind.Dependency => "dependency",
             FindingKind.NoTraffic => "silent",
+            FindingKind.Exception => "throwing",
             _ => "other",
         };
     }

@@ -85,4 +85,39 @@ public sealed class AppInsightsMonitorTests
             ["HTTP", "registry.example.org", "300", "10", "58", "2", "400", "1", "2026-10-20T11:58:00Z"]),
             Component, 720, Now));
     }
+
+    private static QueryTable Exceptions(params string[][] rows) =>
+        new(["problemId", "thrown", "recorded", "users", "operations", "operation", "lastThrown"], rows);
+
+    [Fact]
+    public void An_exception_thrown_outside_a_failed_request_is_a_finding_of_its_own()
+    {
+        ServiceFinding finding = Assert.Single(AppInsightsMonitor.FromExceptions(Exceptions(
+            ["System.NullReferenceException at Jobs.Sync.Run", "1240", "45", "12", "1", "SyncJob", "2026-10-20T11:55:00Z"]),
+            Component, 720, Now));
+
+        Assert.Equal(FindingKind.Exception, finding.Kind);
+        Assert.Equal("System.NullReferenceException at Jobs.Sync.Run", finding.Subject);
+        Assert.Equal("~1,240 thrown in SyncJob", finding.Detail);
+        Assert.Equal("45 recorded · at least 12 users · last thrown 5m ago", finding.Context);
+    }
+
+    [Fact]
+    public void An_exception_thrown_from_several_operations_says_how_many()
+    {
+        ServiceFinding finding = Assert.Single(AppInsightsMonitor.FromExceptions(Exceptions(
+            ["System.TimeoutException at Data.Query", "30", "30", "0", "3", "GET Orders/Load", "2026-10-20T10:00:00Z"]),
+            Component, 720, Now));
+
+        Assert.Equal("30 thrown across 3 operations", finding.Detail);
+        Assert.Equal("last thrown 2h ago", finding.Context);
+    }
+
+    [Fact]
+    public void An_exception_seen_in_too_few_recorded_items_is_not_raised()
+    {
+        Assert.Empty(AppInsightsMonitor.FromExceptions(Exceptions(
+            ["System.TimeoutException at Data.Query", "90", "3", "1", "1", "SyncJob", "2026-10-20T10:00:00Z"]),
+            Component, 720, Now));
+    }
 }

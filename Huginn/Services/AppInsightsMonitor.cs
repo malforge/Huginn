@@ -11,7 +11,7 @@ namespace Huginn.Services;
 
 /// <summary>
 /// Watches Application Insights resources for routes that are failing or slow, dependencies that
-/// are erroring, and resources that have gone quiet.
+/// are erroring, exceptions thrown outside any failed request, and resources that have gone quiet.
 /// </summary>
 /// <remarks>
 /// Application Insights reports a stream rather than discrete problems, so the rules below define
@@ -223,6 +223,29 @@ public sealed class AppInsightsMonitor
 
         findings.AddRange(FromDependencies(dependencies, component, windowMinutes, now));
 
+        // Exceptions behind a failed request are already on that route's card, so only the rest
+        // are counted here. problemId groups by type and throwing method, as the portal does.
+        QueryTable exceptions = await client.QueryAsync(component.AppId, $"""
+            exceptions
+            | where timestamp > ago({window})
+            | join kind=leftanti (
+                  requests
+                  | where timestamp > ago({window}) and success == false
+                  | project operation_Id
+              ) on operation_Id
+            | summarize thrown = sum(itemCount),
+                        recorded = count(),
+                        users = dcountif(user_AuthenticatedId, isnotempty(user_AuthenticatedId)),
+                        operations = dcountif(operation_Name, isnotempty(operation_Name)),
+                        operation = take_anyif(operation_Name, isnotempty(operation_Name)),
+                        lastThrown = max(timestamp)
+                      by problemId
+            | where recorded >= {MinimumRecorded}
+            | order by thrown desc
+            """, ct);
+
+        findings.AddRange(FromExceptions(exceptions, component, windowMinutes, now));
+
         await AddTrendsAsync(client, component, findings, windowMinutes, ct);
 
         // Every request counts here, not only routes busy enough to be judged, or a resource
@@ -394,6 +417,61 @@ public sealed class AppInsightsMonitor
         return findings;
     }
 
+    /// <summary>
+    /// Exceptions with no failed request behind them, one finding per problem. A failing route
+    /// already reports what it threw, so these are the ones nothing else would show: background
+    /// work, and failures that were caught and logged.
+    /// </summary>
+    public static List<ServiceFinding> FromExceptions(
+        QueryTable exceptions, AppInsightsComponent component, int windowMinutes, DateTimeOffset now)
+    {
+        List<ServiceFinding> findings = [];
+
+        int problemAt = exceptions.IndexOf("problemId");
+        int thrownAt = exceptions.IndexOf("thrown");
+        int recordedAt = exceptions.IndexOf("recorded");
+        int usersAt = exceptions.IndexOf("users");
+        int operationsAt = exceptions.IndexOf("operations");
+        int operationAt = exceptions.IndexOf("operation");
+        int lastThrownAt = exceptions.IndexOf("lastThrown");
+
+        foreach (IReadOnlyList<string> row in exceptions.Rows)
+        {
+            long thrown = Number(row, thrownAt);
+            long recorded = Number(row, recordedAt);
+
+            // The query filters on this too; it is held here so the rule does not depend on it.
+            if (recorded < MinimumRecorded) continue;
+
+            bool sampled = recorded != thrown;
+            long operations = Number(row, operationsAt);
+            string operation = Text(row, operationAt);
+
+            string where = operations > 1 ? $" across {Count(operations)} operations"
+                : operation.Length > 0 ? $" in {operation}"
+                : "";
+
+            findings.Add(new ServiceFinding
+            {
+                Kind = FindingKind.Exception,
+                ResourceName = component.Name,
+                AppId = component.AppId,
+                ResourceId = component.ResourceId,
+                Subject = Text(row, problemAt),
+                Detail = $"{Estimate(thrown, sampled)} thrown{where}",
+                Context = Evidence(
+                    sampled ? $"{Count(recorded)} recorded" : "",
+                    Users(Number(row, usersAt), sampled),
+                    Last("thrown", Text(row, lastThrownAt), now)),
+                Magnitude = thrown,
+                Calls = thrown,
+                WindowMinutes = windowMinutes,
+            });
+        }
+
+        return findings;
+    }
+
     /// <summary>Copy is en-US whatever the machine is set to, so a finding reads the same everywhere.</summary>
     private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-US");
 
@@ -423,7 +501,10 @@ public sealed class AppInsightsMonitor
     /// When the last failure was, e.g. "last failed 3h ago". The window can be hours long, so a
     /// rate alone does not say whether the failing stopped long ago or is still going on.
     /// </summary>
-    private static string LastFailed(string at, DateTimeOffset now)
+    private static string LastFailed(string at, DateTimeOffset now) => Last("failed", at, now);
+
+    /// <summary>When something last happened, e.g. "last thrown 5m ago". Empty when unknown.</summary>
+    private static string Last(string verb, string at, DateTimeOffset now)
     {
         if (!DateTimeOffset.TryParse(at, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset when))
             return "";
@@ -434,7 +515,7 @@ public sealed class AppInsightsMonitor
             : ago.TotalMinutes >= 1 ? $"{(int)ago.TotalMinutes}m ago"
             : "just now";
 
-        return $"last failed {phrase}";
+        return $"last {verb} {phrase}";
     }
 
     /// <summary>
@@ -469,6 +550,7 @@ public sealed class AppInsightsMonitor
         Dictionary<string, List<double>> latency = [];
         Dictionary<string, List<double>> failureRate = [];
         Dictionary<string, List<double>> dependency = [];
+        Dictionary<string, List<double>> exception = [];
 
         if (findings.Any(f => f.Kind is FindingKind.Latency or FindingKind.FailureRate))
         {
@@ -497,6 +579,27 @@ public sealed class AppInsightsMonitor
             }
         }
 
+        if (findings.Any(f => f.Kind == FindingKind.Exception))
+        {
+            QueryTable series = await client.QueryAsync(component.AppId, $"""
+                exceptions
+                | where timestamp > ago({window})
+                | join kind=leftanti (
+                      requests
+                      | where timestamp > ago({window}) and success == false
+                      | project operation_Id
+                  ) on operation_Id
+                | summarize thrown = sum(itemCount) by problemId, bin(timestamp, {bucket}m)
+                | order by timestamp asc
+                """, ct);
+
+            int problemAt = series.IndexOf("problemId");
+            int thrownAt = series.IndexOf("thrown");
+
+            foreach (IReadOnlyList<string> row in series.Rows)
+                Append(exception, Text(row, problemAt), Number(row, thrownAt));
+        }
+
         if (findings.Any(f => f.Kind == FindingKind.Dependency))
         {
             QueryTable series = await client.QueryAsync(component.AppId, $"""
@@ -521,6 +624,7 @@ public sealed class AppInsightsMonitor
                 FindingKind.Latency => Lookup(latency, finding.Subject),
                 FindingKind.FailureRate => Lookup(failureRate, finding.Subject),
                 FindingKind.Dependency => Lookup(dependency, finding.Subject),
+                FindingKind.Exception => Lookup(exception, finding.Subject),
                 _ => null,
             };
 

@@ -42,6 +42,19 @@ public static class FindingQuery
                 | order by timestamp asc
                 """,
 
+            FindingKind.Exception => $"""
+                exceptions
+                | where timestamp > ago({window})
+                | where problemId == {subject}
+                | join kind=leftanti (
+                      requests
+                      | where timestamp > ago({window}) and success == false
+                      | project operation_Id
+                  ) on operation_Id
+                | summarize thrown = sum(itemCount), recorded = count() by operation_Name
+                | order by thrown desc
+                """,
+
             _ => $"""
                 requests
                 | where timestamp > ago({window})
@@ -107,6 +120,14 @@ public static class FindingQuery
                 | order by timestamp asc
                 """,
 
+            FindingKind.Exception => $"""
+                exceptions
+                | where timestamp > ago({window})
+                | where problemId == {subject}
+                | project timestamp, operation_Name, type, outerMessage, method, assembly, details
+                | order by timestamp desc
+                """,
+
             // Nothing arriving: the shape of the silence is the whole answer.
             _ => Evidence(finding),
         };
@@ -149,6 +170,19 @@ public static class FindingQuery
                                 slowest = round(max(duration))
                               by resultCode, bin(timestamp, 30m)
                     | order by timestamp asc
+                    """),
+            ],
+
+            FindingKind.Exception =>
+            [
+                new Drilldown("Where it is thrown and what it says, over time", $"""
+                    exceptions
+                    | where timestamp > ago({window})
+                    | where problemId == {subject}
+                    | summarize occurrences = sum(itemCount)
+                              by operation_Name, outerMessage, method, bin(timestamp, 1h)
+                    | order by timestamp asc
+                    | take 50
                     """),
             ],
 

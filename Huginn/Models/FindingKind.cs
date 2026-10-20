@@ -14,4 +14,10 @@ public enum FindingKind
 
     /// <summary>The resource has stopped receiving traffic entirely.</summary>
     NoTraffic,
+
+    /// <summary>
+    /// The resource is throwing an exception with no failed request behind it, such as in a
+    /// background job or a call whose failure is caught.
+    /// </summary>
+    Exception,
 }
