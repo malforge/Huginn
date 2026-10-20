@@ -29,7 +29,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly IAutoStartService _autoStart;
 
     /// <summary>
-    /// Shared settings instance — used by the View for window state persistence.
+    /// Shared settings instance, used by the View for window state persistence.
     /// </summary>
     public AppSettings Settings => _settings;
 
@@ -48,6 +48,12 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// is one summary line per project or resource, which is a fixed height whatever the volume.
     /// </summary>
     public ObservableCollection<SentryIssueItem> CrashActions { get; } = [];
+
+    /// <summary>The biggest crashes not already raised, by whichever ranking is chosen.</summary>
+    public ObservableCollection<SentryIssueItem> TopCrashes { get; } = [];
+
+    /// <summary>The biggest warning and info issues, kept apart so they never outrank a crash.</summary>
+    public ObservableCollection<SentryIssueItem> TopReports { get; } = [];
     public ObservableCollection<SourceSummary> CrashSummaries { get; } = [];
 
     public ObservableCollection<ServiceFinding> ServiceActions { get; } = [];
@@ -90,6 +96,36 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     public ObservableCollection<SourceSummary> ServiceSummaries { get; } = [];
 
     [ObservableProperty] private bool _showMutedCrashes;
+
+    /// <summary>Ranks the crash list over all time; otherwise over the last fortnight.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RankCrashesByRecent))]
+    [NotifyPropertyChangedFor(nameof(TopCrashesHeading))]
+    [NotifyPropertyChangedFor(nameof(TopReportsHeading))]
+    private bool _rankCrashesByAllTime;
+
+    /// <summary>What the top list is ranked by, in words, so "top" never has to be guessed.</summary>
+    private string RankedBy => RankCrashesByAllTime
+        ? "most users since first seen"
+        : $"most users in the last {SentryIssueItem.RecentWindow}";
+
+    public string TopCrashesHeading => $"CRASHES WITH THE {RankedBy.ToUpperInvariant()}";
+
+    public string TopReportsHeading => $"WARNINGS AND INFO, NOT CRASHES · {RankedBy.ToUpperInvariant()}";
+
+    /// <summary>
+    /// The other half of the ranking switch. A press on the half already chosen leaves it chosen,
+    /// rather than flipping to the other, so the switch only ever moves where it was pressed.
+    /// </summary>
+    public bool RankCrashesByRecent
+    {
+        get => !RankCrashesByAllTime;
+        set
+        {
+            if (value) RankCrashesByAllTime = false;
+            else OnPropertyChanged();
+        }
+    }
     [ObservableProperty] private bool _showMutedServices;
     [ObservableProperty] private int _mutedCrashCount;
     [ObservableProperty] private int _mutedServiceCount;
@@ -279,6 +315,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         SentryToken = _settings.GetSentryToken() ?? "";
         MonitorMyBuilds = _settings.MonitorMyBuilds;
         ExplainPortalView = _settings.ExplainPortalView;
+        RankCrashesByAllTime = _settings.RankSentryByAllTime;
         AutoStartEnabled = _autoStart.IsEnabled;
 
         UpdateService.Instance.PropertyChanged += OnUpdateServicePropertyChanged;
@@ -350,13 +387,13 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         get
         {
             if (!UpdateService.Instance.CanUpdate)
-                return "Auto-update is only active in installed builds — this is a dev/local-publish build, so updates won't apply here. Install from a GitHub Release to enable.";
+                return "Auto-update is only active in installed builds. This is a dev/local-publish build, so updates won't apply here. Install from a GitHub Release to enable.";
             return UpdateService.Instance.State switch
             {
                 UpdateState.Idle => "Huginn checks for new versions on launch and every 30 minutes thereafter.",
                 UpdateState.Checking => "Talking to GitHub…",
                 UpdateState.UpToDate => "You're on the latest version. Huginn rechecks every 30 minutes.",
-                UpdateState.UpdateReady => $"v{UpdateService.Instance.AvailableVersion} has been downloaded and will install the next time you launch Huginn — or click Restart now to do it immediately.",
+                UpdateState.UpdateReady => $"v{UpdateService.Instance.AvailableVersion} has been downloaded and will install the next time you launch Huginn, or click Restart now to do it immediately.",
                 UpdateState.Failed => UpdateService.Instance.ErrorMessage ?? "Last check failed. Will retry on the next interval.",
                 _ => string.Empty,
             };
@@ -619,7 +656,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         foreach (var issue in _lastSentryIssues)
         {
             issue.IsMuted = _settings.IsSentryIssueMuted(issue.Id);
-            if (issue.IsMuted) issue.IsWidespread = false;
             issue.ApplyRaise(
                 _settings.IsSentryIssueFlagged(issue.Id),
                 _settings.GetSentryFlagReason(issue.Id));
@@ -629,8 +665,19 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         HasMutedCrashes = MutedCrashCount > 0;
         if (ShowMutedCrashes && MutedCrashCount == 0) ShowMutedCrashes = false;
 
-        Sync(CrashActions, _lastSentryIssues
+        IEnumerable<SentryIssueItem> ranked = SentryMonitor.Ranked(_lastSentryIssues, RankCrashesByAllTime);
+
+        Sync(CrashActions, ranked
             .Where(i => ShowMutedCrashes ? i.IsMuted : i.IsFlagged && !i.IsMuted));
+
+        // An alert is already on screen above, so the top lists hold the rest. Muted issues are
+        // shown only where asked for.
+        IEnumerable<SentryIssueItem> listed = ShowMutedCrashes
+            ? []
+            : ranked.Where(i => !i.IsFlagged && !i.IsMuted);
+
+        Sync(TopCrashes, listed.Where(i => i.IsCrash).Take(TopCrashCount));
+        Sync(TopReports, listed.Where(i => !i.IsCrash).Take(TopReportCount));
 
         Summarise(CrashSummaries, _lastSentryIssues
             .GroupBy(i => i.ProjectSlug)
@@ -806,12 +853,12 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         else
         {
             // Muting is a stronger answer than dismissing, so it settles the alert too.
-            _settings.MuteSentryIssue(issue.Id, issue.UserCount, issue.EventCount);
+            _settings.MuteSentryIssue(issue.Id, issue.RecentUserCount, issue.RecentEventCount);
             _settings.DismissSentryIssue(issue.Id);
             issue.IsMuted = true;
             issue.IsFlagged = false;
             issue.FlagReason = "";
-            issue.MutedAtUserCount = issue.UserCount;
+            issue.MutedAtUserCount = issue.RecentUserCount;
         }
 
         RebuildSentryList();
@@ -852,7 +899,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 : quiet;
 
     public string CrashEmptyText => EmptyPaneText(
-        SentryStatus, _sentryLastPolled, "Nothing raised. New and returning crashes appear here.");
+        SentryStatus, _sentryLastPolled, "None right now.");
 
     public string ServiceEmptyText => EmptyPaneText(
         AppInsightsStatus, _serviceLastPolled,
@@ -940,6 +987,23 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     partial void OnShowMutedCrashesChanged(bool value) => RebuildSentryList();
+
+    partial void OnRankCrashesByAllTimeChanged(bool value)
+    {
+        if (_settings.RankSentryByAllTime != value)
+        {
+            _settings.RankSentryByAllTime = value;
+            _settings.Save();
+        }
+
+        RebuildSentryList();
+    }
+
+    /// <summary>Crashes listed under the alerts. Enough to choose work from, few enough to read.</summary>
+    private const int TopCrashCount = 10;
+
+    /// <summary>Warning and info issues listed. Fewer, since none of them is a crash.</summary>
+    private const int TopReportCount = 5;
 
     partial void OnShowMutedServicesChanged(bool value) => RebuildServiceGroups();
 
@@ -1831,7 +1895,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         AcknowledgedBuilds.Clear();
 
         // Acknowledged items get pulled out of their priority sections and shown in a dedicated
-        // neutral section at the bottom — preserves visibility but drops the urgency styling.
+        // neutral section at the bottom: preserves visibility but drops the urgency styling.
         AddPrs(cats.FailedValidation, FailedValidationPrs);
         AddPrs(cats.Unstaffed, UnstaffedPrs);
         AddPrs(cats.AutoCompleteOff, AutoCompleteOffPrs);
@@ -2021,7 +2085,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 : ConnectionState.Error,
             msg));
 
-    private void OnSentryPolled(List<SentryIssueItem> issues)
+    private void OnSentryPolled(List<SentryIssueItem> issues, bool isComplete)
         => Dispatcher.UIThread.Post(() =>
         {
             _lastSentryIssues = issues;
@@ -2031,11 +2095,16 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
             var muted = issues.Count(i => _settings.IsSentryIssueMuted(i.Id));
             var active = issues.Count - muted;
+            string window = $"seen in the last {SentryIssueItem.RecentWindow}";
+
+            // A list cut short says so, because the issues it is missing are not resolved, only
+            // unread, and the count would otherwise read as everything there is.
+            string cut = isComplete ? "" : ", more not read";
             SentryStatus.Set(
                 ConnectionState.Connected,
-                active == 0 && muted == 0 ? "Connected, nothing unresolved"
-                : muted == 0 ? $"Connected, {active} unresolved"
-                : $"Connected, {active} unresolved, {muted} muted");
+                active == 0 && muted == 0 ? $"Connected, nothing unresolved {window}"
+                : muted == 0 ? $"Connected, {active} unresolved {window}{cut}"
+                : $"Connected, {active} unresolved, {muted} muted, {window}{cut}");
         });
 
     private void OnAppInsightsPolled(List<ServiceFinding> findings)

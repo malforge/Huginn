@@ -1,3 +1,16 @@
+v.1.7.0
+   - Fixed: crash counts covered only the last 24 hours, and an issue's first seen date was the start of those 24 hours, so a crash Sentry had seen since April read as new and as a fraction of its size. Every card now gives both reaches, everyone since Sentry first saw it and the last 14 days, e.g. "1,353 users since Apr 13 · 308 in 14d", matching what Sentry shows.
+   - Fixed: an issue was called new whenever it was missing from the previous check, so a crash that went quiet for a day came back as new. New now means Sentry first saw it since Huginn last looked, and the label comes down once the issue is more than 14 days old.
+   - Fixed: a crash already raised as regressed was raised again on every restart.
+   - The crash pane lists every unresolved issue seen in the last 14 days, rather than those seen in the last 24 hours, and reads every page of them rather than the first 100. When there are more than one check reads, the status line says so.
+   - The crash pane shows alerts first, then the ten crashes that have reached the most people. A switch ranks them over the last 14 days or over all time. Warning and info reports, which the app sends on purpose, are listed apart and never ranked against a crash.
+   - Crashes are no longer raised for being widespread. That bar was a share of everyone hit, so a single large warning set it beyond any crash's reach and nothing was raised.
+   - A muted crash comes back when its reach over the last 14 days doubles. Mutes saved earlier are measured again at their current size rather than lifted.
+   - Fixed: service findings were built on counts scaled up by sampling, so one recorded failed request could show as a route failing every one of dozens of calls. Rules are now judged on requests actually recorded, estimated counts are marked ~, and each card says how many were recorded, the users seen failing, and when it last failed.
+   - A failing dependency is one card whatever codes it failed with, and says what share of its calls failed. It was one card per code, each with the sparkline of all of them.
+   - Fixed: a resource whose traffic was spread across many quiet routes was reported as having no requests at all.
+   - Fixed: numbers on service cards followed the machine's regional settings, e.g. "p95 54,0s" and "1 692 calls".
+
 v.1.6.1
    - A Claude Code registration made before 1.6.0, which has Claude Code start this copy of Huginn itself, is moved over to the HTTP address when Huginn starts, with no button to press. A registration pointing at anything else is left alone. Should Claude Code refuse the new entry, the old one is put back rather than leaving none.
    - Fixed: the app and an MCP server started over stdio write the same log, and each wrote over the lines the other had added, so entries went missing.

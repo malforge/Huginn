@@ -82,17 +82,21 @@ public sealed partial class AppSettings
     public Dictionary<string, string> FlaggedSentryIssues { get; set; } = [];
 
     /// <summary>
-    /// Issues Huginn has already seen, so "new" means new to the user rather than new to this
-    /// process. Held in memory, every restart adopted the whole backlog as the baseline and
-    /// nothing already broken could ever be raised again.
+    /// Issues listed by the last poll, so one first seen just before it is not raised as new twice.
+    /// Persisted, because a restart must not forget what it has already announced.
     /// </summary>
     public List<string> KnownSentryIssues { get; set; } = [];
 
     /// <summary>
-    /// Whether a first Sentry poll has ever completed. Separate from the list being empty, which
-    /// is also what an organisation with nothing unresolved looks like.
+    /// Issues already raised as regressed, so a restart does not raise every one of them again.
     /// </summary>
-    public bool SentryBaselineTaken { get; set; }
+    public List<string> KnownSentryRegressions { get; set; } = [];
+
+    /// <summary>
+    /// When Sentry was last read. An issue is new when Sentry first saw it after this, and null
+    /// means no poll has completed, which is a baseline rather than a backlog to announce.
+    /// </summary>
+    public DateTimeOffset? SentryCheckedAt { get; set; }
 
     /// <summary>
     /// Service findings the user has muted, keyed by finding id, holding how bad each was at the
@@ -208,6 +212,9 @@ public sealed partial class AppSettings
     /// mode, and neither can be set from the URL, so the query looks absent when it is not.
     /// </remarks>
     public bool ExplainPortalView { get; set; } = true;
+
+    /// <summary>Ranks the crash list over all time rather than over the last fortnight.</summary>
+    public bool RankSentryByAllTime { get; set; }
 
     /// <summary>
     /// What an agent presents to reach the MCP endpoint. Made once and kept, so a registration
@@ -339,15 +346,26 @@ public sealed partial class AppSettings
     /// Mutes a Sentry issue at its current size. It stays muted until it regresses or roughly
     /// doubles, so an unfixable crash goes quiet without going silent for good.
     /// </summary>
+    /// <param name="userCount">People reached within <see cref="SentryIssueItem.RecentWindow"/>.</param>
+    /// <param name="eventCount">Events within <see cref="SentryIssueItem.RecentWindow"/>.</param>
     public void MuteSentryIssue(string issueId, int userCount, int eventCount)
     {
         MutedSentryIssues[issueId] = new SentryAcknowledgement
         {
             UserCount = userCount,
             EventCount = eventCount,
+            Window = SentryIssueItem.RecentWindow,
         };
         Save();
     }
+
+    /// <summary>
+    /// Whether a mute was measured over some other window than the one counts now cover, so
+    /// comparing against it would call an unchanged issue worse.
+    /// </summary>
+    public bool IsSentryMuteMeasuredElsewhere(string issueId) =>
+        MutedSentryIssues.TryGetValue(issueId, out SentryAcknowledgement? muted)
+        && muted.Window != SentryIssueItem.RecentWindow;
 
     public void UnmuteSentryIssue(string issueId)
     {
@@ -393,11 +411,13 @@ public sealed partial class AppSettings
     public string GetSentryFlagReason(string issueId) =>
         FlaggedSentryIssues.TryGetValue(issueId, out string? reason) ? reason : "";
 
-    /// <summary>Records the issues seen in a poll as the baseline that later polls compare to.</summary>
-    public void SetSentryBaseline(IEnumerable<string> issueIds)
+    /// <summary>Records what a poll saw as the baseline that later polls compare to.</summary>
+    public void SetSentryBaseline(
+        IEnumerable<string> issueIds, IEnumerable<string> regressionIds, DateTimeOffset checkedAt)
     {
         KnownSentryIssues = [.. issueIds];
-        SentryBaselineTaken = true;
+        KnownSentryRegressions = [.. regressionIds];
+        SentryCheckedAt = checkedAt;
         Save();
     }
 
@@ -481,7 +501,8 @@ public sealed partial class AppSettings
             MutedSentryIssues = MutedSentryIssues,
             FlaggedSentryIssues = FlaggedSentryIssues,
             KnownSentryIssues = KnownSentryIssues,
-            SentryBaselineTaken = SentryBaselineTaken,
+            KnownSentryRegressions = KnownSentryRegressions,
+            SentryCheckedAt = SentryCheckedAt,
             MutedFindings = MutedFindings,
             FlaggedFindings = FlaggedFindings,
             AppInsightsPollIntervalMinutes = AppInsightsPollIntervalMinutes,
@@ -501,6 +522,7 @@ public sealed partial class AppSettings
             AcknowledgedBuildIds = AcknowledgedBuildIds,
             AcknowledgedPrIds = AcknowledgedPrIds,
             ExplainPortalView = ExplainPortalView,
+            RankSentryByAllTime = RankSentryByAllTime,
             AgentToken = AgentToken,
         }, SettingsJsonContext.Default.SettingsDto);
         File.WriteAllText(SettingsPath, json);
@@ -533,7 +555,8 @@ public sealed partial class AppSettings
                 MutedSentryIssues = dto.MutedSentryIssues ?? [],
                 FlaggedSentryIssues = dto.FlaggedSentryIssues ?? [],
                 KnownSentryIssues = dto.KnownSentryIssues ?? [],
-                SentryBaselineTaken = dto.SentryBaselineTaken,
+                KnownSentryRegressions = dto.KnownSentryRegressions ?? [],
+                SentryCheckedAt = dto.SentryCheckedAt,
                 MutedFindings = dto.MutedFindings ?? [],
                 FlaggedFindings = dto.FlaggedFindings ?? [],
                 AppInsightsPollIntervalMinutes =
@@ -555,6 +578,7 @@ public sealed partial class AppSettings
                 AcknowledgedBuildIds = dto.AcknowledgedBuildIds ?? [],
                 AcknowledgedPrIds = dto.AcknowledgedPrIds ?? [],
                 ExplainPortalView = dto.ExplainPortalView,
+                RankSentryByAllTime = dto.RankSentryByAllTime,
                 AgentToken = dto.AgentToken ?? "",
             };
         }
@@ -580,7 +604,8 @@ public sealed partial class AppSettings
         public Dictionary<string, SentryAcknowledgement>? MutedSentryIssues { get; set; }
         public Dictionary<string, string>? FlaggedSentryIssues { get; set; }
         public List<string>? KnownSentryIssues { get; set; }
-        public bool SentryBaselineTaken { get; set; }
+        public List<string>? KnownSentryRegressions { get; set; }
+        public DateTimeOffset? SentryCheckedAt { get; set; }
         public Dictionary<string, double>? MutedFindings { get; set; }
         public Dictionary<string, string>? FlaggedFindings { get; set; }
         public int AppInsightsPollIntervalMinutes { get; set; } = 15;
@@ -600,6 +625,7 @@ public sealed partial class AppSettings
         public List<int>? AcknowledgedBuildIds { get; set; }
         public List<int>? AcknowledgedPrIds { get; set; }
         public bool ExplainPortalView { get; set; } = true;
+        public bool RankSentryByAllTime { get; set; }
         public string? AgentToken { get; set; }
     }
 

@@ -851,7 +851,7 @@
                                 <StackPanel Spacing="6">
                                     <TextBlock Text="⚠ Your PRs without autocomplete" FontWeight="SemiBold" FontSize="14"
                                                Foreground="#FFDD6600"
-                                               ToolTip.Tip="These PRs aren't set to autocomplete — they won't merge automatically when policies pass, so they risk being forgotten."/>
+                                               ToolTip.Tip="These PRs aren't set to autocomplete, so they won't merge automatically when policies pass, so they risk being forgotten."/>
                                     <ItemsControl ItemsSource="{Binding AutoCompleteOffPrs}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="models:PullRequestItem">
@@ -918,7 +918,7 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
-                            <!-- ✓ Acknowledged — pulled out of priority sections, neutral styling -->
+                            <!-- ✓ Acknowledged: pulled out of priority sections, neutral styling -->
                             <TextBlock Text="✓ Acknowledged" FontWeight="SemiBold" FontSize="14"
                                        Margin="8,16,0,4" Opacity="0.6"
                                        IsVisible="{Binding HasAcknowledged}"/>
@@ -966,7 +966,7 @@
                         <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
                             <StackPanel>
-                            <!-- 🔴 Build failures (critical — no retry underway) -->
+                            <!-- 🔴 Build failures (critical: no retry underway) -->
                             <Border IsVisible="{Binding HasFailedBuilds}" Margin="4" Padding="10" CornerRadius="6"
                                     Background="#44FF2200" BorderBrush="#AAFF2200" BorderThickness="1">
                                 <StackPanel Spacing="6">
@@ -986,7 +986,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- 🟠 Build failures (retry in progress — de-escalated) -->
+                            <!-- 🟠 Build failures (retry in progress, de-escalated) -->
                             <Border IsVisible="{Binding HasRetryingBuilds}" Margin="4" Padding="10" CornerRadius="6"
                                     Background="#44FF8800" BorderBrush="#AAFF8800" BorderThickness="1">
                                 <StackPanel Spacing="6">
@@ -1024,11 +1024,23 @@
                         that scrolls out of sight.
                     -->
                     <Grid RowDefinitions="Auto,*,Auto,Auto">
-                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="8,4,8,4">
+                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,4,8,4">
                             <TextBlock Text="CRASHES" FontSize="12"
                                        FontWeight="SemiBold" Opacity="0.55"
                                        VerticalAlignment="Center"/>
-                            <ToggleButton Grid.Column="2" FontSize="11" Padding="6,2"
+                            <!-- Ranks every list in the pane. Held in place even while muted
+                                 issues are shown, so nothing beside it moves. -->
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="0"
+                                        VerticalAlignment="Center" Margin="0,0,6,0"
+                                        ToolTip.Tip="Rank by people reached in the last 14 days, or since Sentry first saw each issue">
+                                <ToggleButton FontSize="11" Padding="6,2" CornerRadius="3,0,0,3"
+                                              Content="Last 14 days"
+                                              IsChecked="{Binding RankCrashesByRecent}"/>
+                                <ToggleButton FontSize="11" Padding="6,2" CornerRadius="0,3,3,0"
+                                              Content="All time"
+                                              IsChecked="{Binding RankCrashesByAllTime}"/>
+                            </StackPanel>
+                            <ToggleButton Grid.Column="3" FontSize="11" Padding="6,2"
                                           VerticalAlignment="Center"
                                           IsChecked="{Binding ShowMutedCrashes}"
                                           IsVisible="{Binding HasMutedCrashes}"
@@ -1045,22 +1057,43 @@
                         <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
                             <StackPanel>
-                                <ItemsControl ItemsSource="{Binding CrashActions}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="models:SentryIssueItem">
-                                            <views:SentryIssueCardView DataContext="{Binding}"
-                                                                       OpenCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenSentryIssueCommand}"
-                                                                       MuteCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleSentryIssueMutedCommand}"
-                                                                       DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissSentryIssueCommand}"
-                                                                       CopyLinkCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyCrashLinkCommand}"
-                                                                       CopyIdCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyCrashIdCommand}"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <StackPanel.Resources>
+                                    <DataTemplate x:Key="SentryCard" x:DataType="models:SentryIssueItem">
+                                        <views:SentryIssueCardView DataContext="{Binding}"
+                                                                   OpenCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenSentryIssueCommand}"
+                                                                   MuteCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ToggleSentryIssueMutedCommand}"
+                                                                   DismissCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DismissSentryIssueCommand}"
+                                                                   CopyLinkCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyCrashLinkCommand}"
+                                                                   CopyIdCommand="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyCrashIdCommand}"/>
+                                    </DataTemplate>
+                                </StackPanel.Resources>
+                                <TextBlock Text="ALERTS · NEW, RETURNED OR GROWING" FontSize="10"
+                                           FontWeight="SemiBold" Opacity="0.5" Margin="8,4,8,2"
+                                           TextTrimming="CharacterEllipsis"
+                                           IsVisible="{Binding !ShowMutedCrashes}"/>
+                                <ItemsControl ItemsSource="{Binding CrashActions}"
+                                              ItemTemplate="{StaticResource SentryCard}"/>
 
                                 <TextBlock IsVisible="{Binding !CrashActions.Count}" Margin="8,10"
                                            FontSize="12" Opacity="0.45" TextWrapping="Wrap"
                                            Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CrashEmptyText}"/>
+
+                                <!-- Alerts say what changed; these say what is biggest. Choosing
+                                     work starts here, so it is listed whether or not anything
+                                     has been raised. -->
+                                <TextBlock Text="{Binding TopCrashesHeading}" FontSize="10"
+                                           FontWeight="SemiBold" Opacity="0.5" Margin="8,8,8,2"
+                                           TextTrimming="CharacterEllipsis"
+                                           IsVisible="{Binding TopCrashes.Count}"/>
+                                <ItemsControl ItemsSource="{Binding TopCrashes}"
+                                              ItemTemplate="{StaticResource SentryCard}"/>
+
+                                <TextBlock Text="{Binding TopReportsHeading}" FontSize="10"
+                                           FontWeight="SemiBold" Opacity="0.5" Margin="8,8,8,2"
+                                           TextTrimming="CharacterEllipsis"
+                                           IsVisible="{Binding TopReports.Count}"/>
+                                <ItemsControl ItemsSource="{Binding TopReports}"
+                                              ItemTemplate="{StaticResource SentryCard}"/>
                             </StackPanel>
                         </ScrollViewer>
 

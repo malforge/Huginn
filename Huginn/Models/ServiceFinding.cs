@@ -34,6 +34,15 @@ public sealed partial class ServiceFinding : ObservableObject
     public string Detail { get; init; } = "";
 
     /// <summary>
+    /// What the measurement rests on, e.g. "15 recorded · at least 6 users · last failed 3h ago":
+    /// how much was actually seen under sampling, who it hit and how recently. Empty when there
+    /// is nothing to add.
+    /// </summary>
+    public string Context { get; init; } = "";
+
+    public bool HasContext => Context.Length > 0;
+
+    /// <summary>
     /// The number the rule tripped on, used to tell whether a muted finding has since worsened.
     /// </summary>
     public double Magnitude { get; init; }

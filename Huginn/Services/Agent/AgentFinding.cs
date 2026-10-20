@@ -15,6 +15,12 @@ public sealed class AgentFinding
 
     public string Detail { get; set; } = "";
 
+    /// <summary>
+    /// What the measurement rests on: how many requests were actually recorded under sampling,
+    /// the users seen failing, and when it last failed. Counts marked ~ in detail are estimates.
+    /// </summary>
+    public string Context { get; set; } = "";
+
     /// <summary>Size in the unit of its kind: percent, milliseconds or a failure count.</summary>
     public double Magnitude { get; set; }
 

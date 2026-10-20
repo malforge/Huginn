@@ -20,12 +20,19 @@ namespace Huginn.Services;
 /// </remarks>
 public sealed class AppInsightsMonitor
 {
-    /// <summary>Calls a route needs in the window before its rates mean anything.</summary>
-    private const int MinimumCalls = 10;
+    /// <summary>
+    /// Requests a route needs actually recorded in the window before its rates mean anything.
+    /// </summary>
+    /// <remarks>
+    /// Recorded rather than estimated. Under sampling each recorded request stands for many, so
+    /// the estimated count can be large on the strength of a single observation, and a single
+    /// failed request would read as a route failing every call.
+    /// </remarks>
+    private const int MinimumRecorded = 10;
 
     /// <summary>
-    /// Calls a route answering mostly 404 needs before it becomes a finding, rather than the
-    /// ordinary <see cref="MinimumCalls"/>.
+    /// Estimated calls a route answering mostly 404 needs before it becomes a finding, on top of
+    /// <see cref="MinimumRecorded"/>.
     /// </summary>
     /// <remarks>
     /// An internet-facing resource is scanned continuously, and scanning is exactly the act of
@@ -51,7 +58,7 @@ public sealed class AppInsightsMonitor
     /// <summary>95th percentile above which a route counts as slow.</summary>
     private const int LatencyThresholdMs = 5000;
 
-    /// <summary>Failures a dependency needs in the window before it is worth raising.</summary>
+    /// <summary>Recorded failures a dependency needs in the window before it is worth raising.</summary>
     private const int DependencyFailureThreshold = 5;
 
     /// <summary>How much worse a muted finding must get before it is raised again.</summary>
@@ -154,11 +161,19 @@ public sealed class AppInsightsMonitor
         findings.Sort((a, b) =>
         {
             int severity = b.Severity.CompareTo(a.Severity);
-            return severity != 0 ? severity : b.Magnitude.CompareTo(a.Magnitude);
+            return severity != 0 ? severity : Size(b).CompareTo(Size(a));
         });
 
         return new Snapshot(findings, raised, ignored, unreadable);
     }
+
+    /// <summary>
+    /// How big a finding is within its kind. A failing route is sized by the calls that failed
+    /// rather than by its rate, so every call of a route hardly anyone uses failing does not
+    /// outrank a busy route losing a tenth of thousands.
+    /// </summary>
+    private static double Size(ServiceFinding finding) =>
+        finding.Kind == FindingKind.FailureRate ? finding.Magnitude / 100 * finding.Calls : finding.Magnitude;
 
     private static async Task<List<ServiceFinding>> ExamineAsync(
         AppInsightsApiClient client, AppInsightsComponent component, int windowMinutes,
@@ -178,27 +193,93 @@ public sealed class AppInsightsMonitor
                         failed = sumif(itemCount, success == false),
                         notFound = sumif(itemCount, toint(resultCode) == 404),
                         p95 = round(percentile(duration, 95)),
-                        codes = strcat_array(make_set_if(resultCode, success == false, {MaxCodesPerRoute}), ", ")
+                        codes = strcat_array(make_set_if(resultCode, success == false and isnotempty(resultCode), {MaxCodesPerRoute}), ", "),
+                        lastFailed = maxif(timestamp, success == false),
+                        recorded = count(),
+                        users = dcountif(user_AuthenticatedId, success == false and isnotempty(user_AuthenticatedId))
                       by name
-            | where total >= {MinimumCalls}
+            | where recorded >= {MinimumRecorded}
             """, ct);
 
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        findings.AddRange(FromRoutes(routes, component, windowMinutes, settings, suppressed, now));
+
+        // One finding per dependency, whatever codes it failed with, so its threshold, its share
+        // of calls and its sparkline all describe the same thing.
+        QueryTable dependencies = await client.QueryAsync(component.AppId, $"""
+            dependencies
+            | where timestamp > ago({window})
+            | summarize calls = sum(itemCount),
+                        failed = sumif(itemCount, success == false),
+                        codes = strcat_array(make_set_if(resultCode, success == false and isnotempty(resultCode), {MaxCodesPerRoute}), ", "),
+                        lastFailed = maxif(timestamp, success == false),
+                        recorded = count(),
+                        failedRecorded = countif(success == false),
+                        users = dcountif(user_AuthenticatedId, success == false and isnotempty(user_AuthenticatedId))
+                      by type, target
+            | where failedRecorded >= {DependencyFailureThreshold}
+            | order by failed desc
+            """, ct);
+
+        findings.AddRange(FromDependencies(dependencies, component, windowMinutes, now));
+
+        await AddTrendsAsync(client, component, findings, windowMinutes, ct);
+
+        // Every request counts here, not only routes busy enough to be judged, or a resource
+        // whose traffic is spread thinly would read as dead.
+        QueryTable traffic = await client.QueryAsync(component.AppId, $"""
+            requests
+            | where timestamp > ago({window})
+            | summarize total = sum(itemCount)
+            """, ct);
+
+        // Silence is the failure a threshold never catches, so it gets its own rule.
+        if (traffic.Rows.Count == 0 || Number(traffic.Rows[0], traffic.IndexOf("total")) == 0)
+        {
+            findings.Add(new ServiceFinding
+            {
+                Kind = FindingKind.NoTraffic,
+                ResourceName = component.Name,
+                AppId = component.AppId,
+                ResourceId = component.ResourceId,
+                Subject = component.Name,
+                Detail = $"no requests in the last {Describe(windowMinutes)}",
+                Magnitude = 1,
+                WindowMinutes = windowMinutes,
+            });
+        }
+
+        return findings;
+    }
+
+    public static List<ServiceFinding> FromRoutes(
+        QueryTable routes, AppInsightsComponent component, int windowMinutes,
+        AppSettings settings, List<IgnoredSubject> suppressed, DateTimeOffset now)
+    {
         int nameAt = routes.IndexOf("name");
         int totalAt = routes.IndexOf("total");
         int failedAt = routes.IndexOf("failed");
-            int p95At = routes.IndexOf("p95");
+        int p95At = routes.IndexOf("p95");
         int codesAt = routes.IndexOf("codes");
         int notFoundAt = routes.IndexOf("notFound");
+        int lastFailedAt = routes.IndexOf("lastFailed");
+        int recordedAt = routes.IndexOf("recorded");
+        int usersAt = routes.IndexOf("users");
 
-        long traffic = 0;
+        List<ServiceFinding> findings = [];
 
         foreach (IReadOnlyList<string> row in routes.Rows)
         {
             string name = Text(row, nameAt);
             long total = Number(row, totalAt);
+            long recorded = Number(row, recordedAt);
             long failed = Number(row, failedAt);
             double p95 = Number(row, p95At);
-            traffic += total;
+
+            // The query filters on this too; it is held here so the rule does not depend on it.
+            if (recorded < MinimumRecorded) continue;
+
+            bool sampled = recorded != total;
 
             long notFound = Number(row, notFoundAt);
 
@@ -227,7 +308,11 @@ public sealed class AppInsightsMonitor
                     AppId = component.AppId,
                     ResourceId = component.ResourceId,
                     Subject = name,
-                    Detail = $"{rate:P0} of {total:N0} calls failed{Codes(Text(row, codesAt))}",
+                    Detail = $"{Share(rate)} of {Estimate(total, sampled)} calls failed{Codes(Text(row, codesAt))}",
+                    Context = Evidence(
+                        sampled ? $"{Count(recorded)} recorded" : "",
+                        Users(Number(row, usersAt), sampled),
+                        LastFailed(Text(row, lastFailedAt), now)),
                     Magnitude = rate * 100,
                     Calls = total,
                     WindowMinutes = windowMinutes,
@@ -243,7 +328,8 @@ public sealed class AppInsightsMonitor
                     AppId = component.AppId,
                     ResourceId = component.ResourceId,
                     Subject = name,
-                    Detail = $"p95 {p95 / 1000:N1}s over {total:N0} calls",
+                    Detail = $"p95 {(p95 / 1000).ToString("N1", English)}s over {Estimate(total, sampled)} calls",
+                    Context = sampled ? $"{Count(recorded)} recorded" : "",
                     Magnitude = p95,
                     Calls = total,
                     WindowMinutes = windowMinutes,
@@ -251,24 +337,40 @@ public sealed class AppInsightsMonitor
             }
         }
 
-        QueryTable dependencies = await client.QueryAsync(component.AppId, $"""
-            dependencies
-            | where timestamp > ago({window}) and success == false
-            | summarize failed = sum(itemCount) by type, target, resultCode
-            | where failed >= {DependencyFailureThreshold}
-            | order by failed desc
-            | take 10
-            """, ct);
+        return findings;
+    }
+
+    public static List<ServiceFinding> FromDependencies(
+        QueryTable dependencies, AppInsightsComponent component, int windowMinutes, DateTimeOffset now)
+    {
+        List<ServiceFinding> findings = [];
 
         int typeAt = dependencies.IndexOf("type");
         int targetAt = dependencies.IndexOf("target");
-        int codeAt = dependencies.IndexOf("resultCode");
-        int depFailedAt = dependencies.IndexOf("failed");
+        int callsAt = dependencies.IndexOf("calls");
+        int failedAt = dependencies.IndexOf("failed");
+        int codesAt = dependencies.IndexOf("codes");
+        int lastFailedAt = dependencies.IndexOf("lastFailed");
+        int recordedAt = dependencies.IndexOf("recorded");
+        int failedRecordedAt = dependencies.IndexOf("failedRecorded");
+        int usersAt = dependencies.IndexOf("users");
 
         foreach (IReadOnlyList<string> row in dependencies.Rows)
         {
-            long failed = Number(row, depFailedAt);
+            long calls = Number(row, callsAt);
+            long failed = Number(row, failedAt);
+            long failedRecorded = Number(row, failedRecordedAt);
             string target = Text(row, targetAt);
+
+            // The query filters on this too; it is held here so the rule does not depend on it.
+            if (failedRecorded < DependencyFailureThreshold) continue;
+
+            bool callsSampled = Number(row, recordedAt) != calls;
+            bool failuresSampled = failedRecorded != failed;
+
+            // The share says whether this is a dead integration or a few bad calls out of many,
+            // which a bare failure count cannot.
+            double share = calls == 0 ? 0 : (double)failed / calls;
 
             findings.Add(new ServiceFinding
             {
@@ -277,32 +379,62 @@ public sealed class AppInsightsMonitor
                 AppId = component.AppId,
                 ResourceId = component.ResourceId,
                 Subject = $"{Text(row, typeAt)} {target}".Trim(),
-                Detail = $"{failed:N0} failures{Codes(Text(row, codeAt))}",
+                Detail = $"{Estimate(failed, failuresSampled)} of {Estimate(calls, callsSampled)} calls failed "
+                         + $"({Share(share)}){Codes(Text(row, codesAt))}",
+                Context = Evidence(
+                    failuresSampled ? $"{Count(failedRecorded)} failures recorded" : "",
+                    Users(Number(row, usersAt), failuresSampled),
+                    LastFailed(Text(row, lastFailedAt), now)),
                 Magnitude = failed,
-                Calls = failed,
-                WindowMinutes = windowMinutes,
-            });
-        }
-
-        await AddTrendsAsync(client, component, findings, windowMinutes, ct);
-
-        // Silence is the failure a threshold never catches, so it gets its own rule.
-        if (traffic == 0)
-        {
-            findings.Add(new ServiceFinding
-            {
-                Kind = FindingKind.NoTraffic,
-                ResourceName = component.Name,
-                AppId = component.AppId,
-                ResourceId = component.ResourceId,
-                Subject = component.Name,
-                Detail = $"no requests in the last {Describe(windowMinutes)}",
-                Magnitude = 1,
+                Calls = calls,
                 WindowMinutes = windowMinutes,
             });
         }
 
         return findings;
+    }
+
+    /// <summary>Copy is en-US whatever the machine is set to, so a finding reads the same everywhere.</summary>
+    private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-US");
+
+    private static string Count(long value) => value.ToString("N0", English);
+
+    /// <summary>A count, marked as an estimate when sampling scaled it up from fewer recorded.</summary>
+    private static string Estimate(long value, bool sampled) => sampled ? $"~{Count(value)}" : Count(value);
+
+    /// <summary>
+    /// People who hit a failure, a floor rather than a count when sampled, since anyone whose
+    /// requests went unrecorded is not in it. Empty when the telemetry names nobody.
+    /// </summary>
+    private static string Users(long users, bool sampled) =>
+        users == 0 ? ""
+        : sampled ? $"at least {Count(users)} user{(users == 1 ? "" : "s")}"
+        : $"{Count(users)} user{(users == 1 ? "" : "s")}";
+
+    /// <summary>The parts of a finding's evidence that apply, joined as one line.</summary>
+    private static string Evidence(params string[] parts) =>
+        string.Join(" · ", parts.Where(p => p.Length > 0));
+
+    /// <summary>A share as a whole percentage, saying under 1% rather than rounding to none.</summary>
+    private static string Share(double share) =>
+        share > 0 && share < 0.005 ? "<1%" : share.ToString("P0", English);
+
+    /// <summary>
+    /// When the last failure was, e.g. "last failed 3h ago". The window can be hours long, so a
+    /// rate alone does not say whether the failing stopped long ago or is still going on.
+    /// </summary>
+    private static string LastFailed(string at, DateTimeOffset now)
+    {
+        if (!DateTimeOffset.TryParse(at, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset when))
+            return "";
+
+        TimeSpan ago = now - when;
+        string phrase = ago.TotalDays >= 1 ? $"{(int)ago.TotalDays}d ago"
+            : ago.TotalHours >= 1 ? $"{(int)ago.TotalHours}h ago"
+            : ago.TotalMinutes >= 1 ? $"{(int)ago.TotalMinutes}m ago"
+            : "just now";
+
+        return $"last failed {phrase}";
     }
 
     /// <summary>
@@ -370,15 +502,16 @@ public sealed class AppInsightsMonitor
             QueryTable series = await client.QueryAsync(component.AppId, $"""
                 dependencies
                 | where timestamp > ago({window}) and success == false
-                | summarize failed = sum(itemCount) by target, bin(timestamp, {bucket}m)
+                | summarize failed = sum(itemCount)
+                          by subject = trim(" ", strcat(type, " ", target)), bin(timestamp, {bucket}m)
                 | order by timestamp asc
                 """, ct);
 
-            int targetAt = series.IndexOf("target");
+            int subjectAt = series.IndexOf("subject");
             int failedAt = series.IndexOf("failed");
 
             foreach (IReadOnlyList<string> row in series.Rows)
-                Append(dependency, Text(row, targetAt), Number(row, failedAt));
+                Append(dependency, Text(row, subjectAt), Number(row, failedAt));
         }
 
         foreach (ServiceFinding finding in findings)
@@ -387,8 +520,7 @@ public sealed class AppInsightsMonitor
             {
                 FindingKind.Latency => Lookup(latency, finding.Subject),
                 FindingKind.FailureRate => Lookup(failureRate, finding.Subject),
-                FindingKind.Dependency => dependency.FirstOrDefault(
-                    d => finding.Subject.EndsWith(d.Key, StringComparison.OrdinalIgnoreCase)).Value,
+                FindingKind.Dependency => Lookup(dependency, finding.Subject),
                 _ => null,
             };
 

@@ -16,10 +16,25 @@ public sealed class AgentCrash
 
     public string Level { get; set; } = "";
 
+    /// <summary>"crash" for fatal and error, "report" for warning and info.</summary>
+    public string Kind { get; set; } = "";
+
+    /// <summary>Every event since Sentry first saw it, as Sentry itself counts them.</summary>
     public int Events { get; set; }
 
+    /// <summary>Everyone it has ever reached, which is what the list is ranked by.</summary>
     public int Users { get; set; }
 
+    /// <summary>Events within <see cref="RecentWindow"/>.</summary>
+    public int RecentEvents { get; set; }
+
+    /// <summary>People reached within <see cref="RecentWindow"/>: whether it is still going.</summary>
+    public int RecentUsers { get; set; }
+
+    /// <summary>The window the recent counts cover, e.g. "14d". Only issues seen in it are listed.</summary>
+    public string RecentWindow { get; set; } = "";
+
+    /// <summary>When Sentry first saw it.</summary>
     public DateTimeOffset FirstSeen { get; set; }
 
     public DateTimeOffset LastSeen { get; set; }
@@ -30,12 +45,12 @@ public sealed class AgentCrash
     /// <summary>Huginn is pointing at this one.</summary>
     public bool Raised { get; set; }
 
-    /// <summary>Why it was raised: new, regressed, worse or widespread. Empty when not raised.</summary>
+    /// <summary>Why it was raised: new, regressed or worse. Empty when not raised.</summary>
     public string RaisedReason { get; set; } = "";
 
     public bool Muted { get; set; }
 
-    /// <summary>Event counts per bucket over the stats window, oldest first.</summary>
+    /// <summary>Event counts per bucket over the last 24 hours, oldest first.</summary>
     public IReadOnlyList<double> Series { get; set; } = [];
 
     public int SeriesBucketMinutes { get; set; }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Huginn.Models;
@@ -32,8 +33,7 @@ public sealed partial class SentryIssueItem : ObservableObject
     {
         get
         {
-            List<string> parts = [ShortCode, Impact];
-            if (TotalAge.Length > 0) parts.Add($"{TotalAge} old");
+            List<string> parts = [ShortCode, Reach, RecentReach];
             if (Age.Length > 0) parts.Add(Age == "just now" ? "seen just now" : $"seen {Age} ago");
             return string.Join(" · ", parts);
         }
@@ -46,12 +46,33 @@ public sealed partial class SentryIssueItem : ObservableObject
 
     public string Level { get; init; } = "";
 
+    /// <summary>
+    /// Fatal or error. A warning or info issue is a report the app chose to send, which is worth
+    /// seeing but is not a crash, so it is listed apart and never ranked against one.
+    /// </summary>
+    public bool IsCrash => Level is "fatal" or "error" or "";
+
     public string ProjectSlug { get; init; } = "";
 
+    /// <summary>
+    /// The window <see cref="RecentEventCount"/> and <see cref="RecentUserCount"/> cover, and the
+    /// one an issue must have been seen in to be listed at all. In Sentry's own period notation.
+    /// </summary>
+    public const string RecentWindow = "14d";
+
+    /// <summary>Every event since Sentry first saw the issue, as Sentry itself shows it.</summary>
     public int EventCount { get; init; }
 
+    /// <summary>Everyone the issue has ever reached, which is what ranks the list.</summary>
     public int UserCount { get; init; }
 
+    /// <summary>Events within <see cref="RecentWindow"/>.</summary>
+    public int RecentEventCount { get; init; }
+
+    /// <summary>People reached within <see cref="RecentWindow"/>, which says whether it is still going.</summary>
+    public int RecentUserCount { get; init; }
+
+    /// <summary>When Sentry first saw the issue, not when it first appeared in the window.</summary>
     public DateTimeOffset FirstSeen { get; init; }
 
     public DateTimeOffset LastSeen { get; init; }
@@ -79,7 +100,7 @@ public sealed partial class SentryIssueItem : ObservableObject
 
     public bool HasRelease => !string.IsNullOrEmpty(ReleaseSummary);
 
-    /// <summary>Events per bucket over the stats window, oldest first.</summary>
+    /// <summary>Events per bucket over the last 24 hours, oldest first.</summary>
     public IReadOnlyList<double> EventSeries { get; init; } = [];
 
     /// <summary>How long one entry in <see cref="EventSeries"/> covers.</summary>
@@ -102,35 +123,29 @@ public sealed partial class SentryIssueItem : ObservableObject
     /// </summary>
     public bool IsFlagged { get; set; }
 
-    /// <summary>Why it was raised: "new", "regressed", "worse" or "widespread".</summary>
+    /// <summary>Why it was raised: "new", "regressed" or "worse".</summary>
     public string FlagReason { get; set; } = "";
 
-    /// <summary>
-    /// Reaching enough people to matter on its own. Current state rather than a stored alert, so
-    /// it is recomputed every poll and goes away again when the issue quietens.
-    /// </summary>
-    public bool IsWidespread { get; set; }
-
-    /// <summary>
-    /// Dismiss clears a stored alert. Reach is recomputed from the next poll, so there is nothing
-    /// for it to clear and the button would do nothing.
-    /// </summary>
+    /// <summary>Dismiss clears a stored alert, so there is something to dismiss only while raised.</summary>
     public bool CanDismiss { get; private set; }
 
     /// <summary>
-    /// Settles the raised state from the stored alert and from live reach. Both the poll and a
-    /// repaint after a mute go through here, so they cannot disagree about what is raised.
+    /// Settles the raised state from the stored alert. Both the poll and a repaint after a mute go
+    /// through here, so they cannot disagree about what is raised.
     /// </summary>
     public void ApplyRaise(bool alerted, string alertReason)
     {
         CanDismiss = alerted;
-        IsFlagged = alerted || IsWidespread;
-        FlagReason = alerted ? alertReason : IsWidespread ? "widespread" : "";
+        IsFlagged = alerted;
+        FlagReason = alerted ? alertReason : "";
     }
 
     public bool HasFlagReason => FlagReason.Length > 0;
 
-    /// <summary>User count when it was muted, so the card can show what it has grown from.</summary>
+    /// <summary>
+    /// People reached in <see cref="RecentWindow"/> when it was muted, so the card can show what
+    /// it has grown from.
+    /// </summary>
     public int MutedAtUserCount { get; set; }
 
     /// <summary>User has acknowledged it, so it stays listed but leaves the badge.</summary>
@@ -143,7 +158,7 @@ public sealed partial class SentryIssueItem : ObservableObject
 
     public string MuteTooltip => IsMuted
         ? "Unmute, so this issue is listed and alerts normally again"
-        : "Mute at its current size. It comes back if it regresses or roughly doubles.";
+        : $"Mute at its current size. It comes back if it regresses or its reach in {RecentWindow} roughly doubles.";
 
     public string MuteLabel => IsMuted ? "Unmute" : "Mute";
 
@@ -162,16 +177,36 @@ public sealed partial class SentryIssueItem : ObservableObject
         _ => "❓",
     };
 
-    /// <summary>Reach, which is what usually decides whether an issue matters.</summary>
-    public string Impact => UserCount == 1
-        ? $"{EventCount:N0} events · 1 user"
-        : $"{EventCount:N0} events · {UserCount:N0} users";
-
     /// <summary>
-    /// How long the issue has existed. A crash that has been around for weeks reads very
-    /// differently from one that appeared this morning, even when both fired a minute ago.
+    /// Everyone reached and since when, e.g. "1,353 users since Apr 14". A crash that has been
+    /// around for months reads very differently from one that appeared this morning.
     /// </summary>
-    public string TotalAge => FirstSeen == DateTimeOffset.MinValue ? "" : Elapsed(FirstSeen);
+    public string Reach
+    {
+        get
+        {
+            string users = UserCount == 1 ? "1 user" : $"{UserCount.ToString("N0", English)} users";
+            return FirstSeen == DateTimeOffset.MinValue ? users : $"{users} since {Day(FirstSeen)}";
+        }
+    }
+
+    /// <summary>People reached lately, e.g. "40 in 14d".</summary>
+    public string RecentReach => $"{RecentUserCount.ToString("N0", English)} in {RecentWindow}";
+
+    /// <summary>Reach in full, for a notification, which has room the card does not.</summary>
+    public string Impact =>
+        $"{Reach}, {RecentReach} · {EventCount.ToString("N0", English)} events";
+
+    private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-US");
+
+    /// <summary>A date as en-US writes it, with the year only when it is not this one.</summary>
+    private static string Day(DateTimeOffset at)
+    {
+        DateTime local = at.ToLocalTime().DateTime;
+        return local.Year == DateTime.Now.Year
+            ? local.ToString("MMM d", English)
+            : local.ToString("MMM d, yyyy", English);
+    }
 
     /// <summary>How long ago it last happened, which says whether it is still going.</summary>
     public string Age => LastSeen == DateTimeOffset.MinValue ? "" : Elapsed(LastSeen);

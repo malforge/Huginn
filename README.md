@@ -21,17 +21,24 @@ Built on [Avalonia](https://avaloniaui.net/) and .NET 10.
   the branch stands now: its newest failure, whoever ran it, until a later run
   passes. A failure whose rerun is in flight is de-escalated to a warning
   section.
-- **Crash monitoring** (Sentry): issues are raised either because they
-  changed (new, returned after being resolved, or outgrew a mute) or because
-  they are big, measured by how many people they reach. Each carries a
+- **Crash monitoring** (Sentry): unresolved issues seen in the last 14 days.
+  Alerts come first: issues that are new to Sentry, have returned after being
+  resolved, or have outgrown a mute. Below them are the ten crashes that have
+  reached the most people, ranked over the last 14 days or over all time by a
+  switch in the pane, and then warning and info reports, which the app sends
+  on purpose and which are never ranked against a crash. Every card gives
+  both reaches, e.g. "1,353 users since Apr 13 · 308 in 14d", plus a
   sparkline of the last 24 hours and a phrase for its shape, so a constant
   drip reads differently from a single burst.
 - **Service monitoring** (Azure Application Insights): failing routes, slow
   routes at the 95th percentile, failing dependencies, and resources that
   have gone silent. Ordered by severity rather than raw magnitude, and
-  failing routes name the result code. Opening one lands in the portal on the
-  query behind it: the exceptions and their stack traces for a failing
-  route, percentiles over the window for a slow one.
+  failures name their result codes. Rules are judged on requests actually
+  recorded rather than on counts scaled up by sampling, and each card says
+  what it rests on: how much was recorded, the users seen failing, and when it
+  last failed. Opening one lands in the portal on the query behind it: the
+  exceptions and their stack traces for a failing route, percentiles over the
+  window for a slow one.
 - **Honest empty panes**: every pane says when it was last checked, and a
   pane whose source cannot answer says so instead of looking calm. An empty
   list from a broken source is the one thing a monitor must not get wrong.
@@ -165,7 +172,7 @@ The tools:
 | Tool | Answers |
 |---|---|
 | `huginn_status` | Everything needing attention right now. Start here. |
-| `huginn_crashes` | Sentry issues, worst reach first. |
+| `huginn_crashes` | Sentry issues, most people reached in the last 14 days first, or over all time. |
 | `huginn_services` | Application Insights findings, most severe first. |
 | `huginn_investigate` | Why one finding is happening, over the window Huginn measured. |
 | `huginn_pull_requests` | The review queues. |

@@ -142,16 +142,24 @@ public static class McpServer
             new JsonObject()),
 
         Tool("huginn_crashes",
-            "Sentry issues, worst reach first. Returns JSON.",
+            "Unresolved Sentry issues seen in the last 14 days, most people reached first. "
+            + "users, events and firstSeen are lifetime totals, as Sentry shows them; "
+            + "recentUsers and recentEvents cover recentWindow. kind is crash (fatal or error) or "
+            + "report (warning or info, which the app sends on purpose). Returns JSON.",
             new JsonObject
             {
-                ["onlyRaised"] = Prop("boolean", "Only issues Huginn raised. Default true."),
+                ["sort"] = Prop("string", "recent (default): most people in the last 14 days first. "
+                                          + "allTime: most people since Sentry first saw it."),
+                ["kind"] = Prop("string", "Filter: crash or report. Default both."),
+                ["onlyRaised"] = Prop("boolean", "Only issues Huginn raised as new, regressed or worse. Default false."),
                 ["includeMuted"] = Prop("boolean", "Include muted issues. Default false."),
                 ["limit"] = Prop("integer", "Maximum issues to return. Default 20."),
             }),
 
         Tool("huginn_services",
-            "Application Insights findings, most severe first. Returns JSON.",
+            "Application Insights findings, most severe first. Counts marked ~ are estimates "
+            + "scaled up from sampling; context says how many requests were actually recorded, "
+            + "the users seen failing and when it last failed. Returns JSON.",
             new JsonObject
             {
                 ["kind"] = Prop("string", "Filter: FailureRate, Latency, Dependency or NoTraffic."),
@@ -417,15 +425,21 @@ public static class McpServer
         List<JsonNode?> raised =
             [.. crashes.Where(c => Bool(c, "raised") && !Bool(c, "muted"))];
 
+        // The same two lists the pane shows: what changed, then what is biggest right now.
+        List<JsonNode?> top =
+        [
+            .. crashes.Where(c => !Bool(c, "raised") && !Bool(c, "muted") && Str(c, "kind") == "crash")
+                .Take(5),
+        ];
+
         text.AppendLine();
-        text.AppendLine($"CRASHES  ({raised.Count} raised of {crashes.Count} unresolved)");
+        text.AppendLine($"CRASHES  ({raised.Count} raised of {crashes.Count} unresolved, "
+                        + "seen in the last 14 days)");
         foreach (JsonNode? crash in raised.Take(10))
-        {
-            text.AppendLine($"  [{Str(crash, "raisedReason")}] {Str(crash, "shortId")} "
-                            + $"{Str(crash, "title")}");
-            text.AppendLine($"      {Num(crash, "events")} events, {Num(crash, "users")} users"
-                            + Suffix(crash, "trend", " - ") + Suffix(crash, "releases", " - "));
-        }
+            AppendCrash(text, crash, $"[{Str(crash, "raisedReason")}] ");
+
+        if (top.Count > 0) text.AppendLine("  Most people reached in the last 14 days:");
+        foreach (JsonNode? crash in top) AppendCrash(text, crash, "");
 
         JsonArray services = Array(snapshot, "services");
         List<JsonNode?> active = [.. services.Where(f => !Bool(f, "muted"))];
@@ -439,7 +453,8 @@ public static class McpServer
             string where = subject == resource ? resource : $"{resource} · {subject}";
 
             text.AppendLine($"  [{Str(finding, "kind")}] {where}");
-            text.AppendLine($"      {Str(finding, "detail")}{Suffix(finding, "trend", " - ")}");
+            text.AppendLine($"      {Str(finding, "detail")}{Suffix(finding, "context", " - ")}"
+                            + Suffix(finding, "trend", " - "));
         }
 
         text.AppendLine();
@@ -469,17 +484,36 @@ public static class McpServer
         return text.ToString().TrimEnd();
     }
 
+    /// <summary>One crash as two lines: what it is, then how far it has reached.</summary>
+    private static void AppendCrash(StringBuilder text, JsonNode? crash, string prefix)
+    {
+        string firstSeen = Str(crash, "firstSeen");
+        string day = firstSeen.Length >= 10 ? firstSeen[..10] : firstSeen;
+
+        text.AppendLine($"  {prefix}{Str(crash, "shortId")} {Str(crash, "title")}");
+        text.AppendLine($"      {Num(crash, "users")} users since {day}, "
+                        + $"{Num(crash, "recentUsers")} in the last {Str(crash, "recentWindow")}"
+                        + Suffix(crash, "trend", " - ") + Suffix(crash, "releases", " - "));
+    }
+
     private static string Crashes(JsonNode snapshot, JsonObject args)
     {
-        bool onlyRaised = Flag(args, "onlyRaised", true);
+        bool onlyRaised = Flag(args, "onlyRaised", false);
         bool includeMuted = Flag(args, "includeMuted", false);
+        bool allTime = Str(args, "sort") == "allTime";
+        string kind = Str(args, "kind");
         int limit = Count(args, "limit", 20);
 
-        return Dump([.. Array(snapshot, "crashes")
+        IEnumerable<JsonNode?> crashes = Array(snapshot, "crashes")
             .Where(c => !onlyRaised || Bool(c, "raised"))
             .Where(c => includeMuted || !Bool(c, "muted"))
-            .Take(limit)
-            .Select(c => c?.DeepClone())]);
+            .Where(c => kind.Length == 0 || Str(c, "kind") == kind);
+
+        // The snapshot is in fortnight order already. Ordering is stable, so all time keeps it
+        // as the tiebreak.
+        if (allTime) crashes = crashes.OrderByDescending(c => Num(c, "users"));
+
+        return Dump([.. crashes.Take(limit).Select(c => c?.DeepClone())]);
     }
 
     private static string Services(JsonNode snapshot, JsonObject args)

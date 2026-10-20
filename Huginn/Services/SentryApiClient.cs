@@ -85,38 +85,84 @@ public sealed class SentryApiClient : IDisposable
         return slugs;
     }
 
+    /// <summary>Issues per page, the most Sentry hands out at once.</summary>
+    private const int PageSize = 100;
+
     /// <summary>
-    /// Unresolved issues across the organisation, newest activity first.
+    /// Ceiling on pages read per poll. Each is its own request, and an organization with more than
+    /// this many unresolved issues in the window is told so rather than shown a silently cut list.
+    /// </summary>
+    private const int MaxPages = 10;
+
+    /// <summary>
+    /// Unresolved issues seen within <see cref="SentryIssueItem.RecentWindow"/>, every page of
+    /// them up to <see cref="MaxPages"/>.
     /// </summary>
     /// <param name="projectSlugs">
     /// The projects to report on. Empty returns nothing: watching everything by default would
     /// make the noisiest setting the one you get without choosing.
     /// </param>
-    public async Task<List<SentryIssueItem>> GetIssuesAsync(
+    /// <returns>
+    /// The issues, and whether that is all of them. Pages are asked for by reach in the window,
+    /// so a list cut at the ceiling loses the issues that reached fewest people lately.
+    /// </returns>
+    public async Task<(List<SentryIssueItem> Issues, bool IsComplete)> GetIssuesAsync(
         string organizationSlug,
         IReadOnlyCollection<string> projectSlugs,
-        string statsPeriod = "24h",
-        int limit = 100,
         CancellationToken ct = default)
     {
+        List<SentryIssueItem> issues = [];
+        if (projectSlugs.Count == 0) return (issues, true);
+
+        // statsPeriod is the date filter. It scopes which issues come back and the top-level
+        // counts, while lifetime carries the totals Sentry itself shows. groupStatsPeriod is the
+        // sparkline alone.
         string url = $"{_baseUrl}/organizations/{Uri.EscapeDataString(organizationSlug)}/issues/"
                    + $"?query={Uri.EscapeDataString("is:unresolved")}"
-                   + $"&statsPeriod={Uri.EscapeDataString(statsPeriod)}"
-                   + $"&limit={limit}&sort=date";
+                   + $"&statsPeriod={SentryIssueItem.RecentWindow}"
+                   + $"&groupStatsPeriod={SeriesPeriod}"
+                   + $"&limit={PageSize}&sort=user";
 
-        using JsonDocument doc = await GetAsync(url, ct);
+        string? cursor = null;
+        for (int page = 0; page < MaxPages; page++)
+        {
+            string pageUrl = cursor is null ? url : $"{url}&cursor={Uri.EscapeDataString(cursor)}";
+            (JsonDocument doc, string? link) = await GetPageAsync(pageUrl, ct);
+            using (doc) issues.AddRange(ParseIssues(doc.RootElement, projectSlugs));
 
+            cursor = NextCursor(link);
+            if (cursor is null) return (issues, true);
+        }
+
+        return (issues, false);
+    }
+
+    /// <summary>The sparkline window, read back from the response under the same key.</summary>
+    private const string SeriesPeriod = "24h";
+
+    /// <summary>One page of the issue list, keeping the watched projects.</summary>
+    /// <remarks>
+    /// Filtering here rather than in the query keeps one listing for any number of projects. Reach
+    /// and first seen come from lifetime: the top level is cut to the queried window, so read
+    /// alone it calls a crash from April new and counts only its last fortnight.
+    /// </remarks>
+    public static List<SentryIssueItem> ParseIssues(JsonElement page, IReadOnlyCollection<string> projectSlugs)
+    {
         HashSet<string> wanted = new(projectSlugs, StringComparer.OrdinalIgnoreCase);
         List<SentryIssueItem> issues = [];
         if (wanted.Count == 0) return issues;
-        foreach (JsonElement issue in doc.RootElement.EnumerateArray())
+
+        foreach (JsonElement issue in page.EnumerateArray())
         {
             string project = issue.TryGetProperty("project", out JsonElement p)
                              && p.TryGetProperty("slug", out JsonElement ps)
                 ? ps.GetString() ?? "" : "";
 
-            // Filtering here rather than in the query keeps one request for any number of projects.
             if (!wanted.Contains(project)) continue;
+
+            JsonElement lifetime = issue.TryGetProperty("lifetime", out JsonElement l)
+                                   && l.ValueKind == JsonValueKind.Object
+                ? l : issue;
 
             issues.Add(new SentryIssueItem
             {
@@ -126,20 +172,51 @@ public sealed class SentryApiClient : IDisposable
                 Culprit = Text(issue, "culprit"),
                 Level = Text(issue, "level"),
                 ProjectSlug = project,
-                // count comes back as a string, not a number.
-                EventCount = int.TryParse(Text(issue, "count"), out int c) ? c : 0,
-                UserCount = issue.TryGetProperty("userCount", out JsonElement u)
-                            && u.TryGetInt32(out int uc) ? uc : 0,
-                FirstSeen = Time(issue, "firstSeen"),
-                LastSeen = Time(issue, "lastSeen"),
+                EventCount = Events(lifetime),
+                UserCount = Users(lifetime),
+                RecentEventCount = Events(issue),
+                RecentUserCount = Users(issue),
+                FirstSeen = Time(lifetime, "firstSeen"),
+                LastSeen = Time(lifetime, "lastSeen"),
                 Permalink = Text(issue, "permalink"),
                 IsRegression = string.Equals(Text(issue, "substatus"), "regressed", StringComparison.OrdinalIgnoreCase),
-                EventSeries = Series(issue, statsPeriod, out int bucketMinutes),
+                EventSeries = Series(issue, SeriesPeriod, out int bucketMinutes),
                 SeriesBucketMinutes = bucketMinutes,
             });
         }
 
         return issues;
+    }
+
+    /// <summary>count comes back as a string, not a number.</summary>
+    private static int Events(JsonElement counts) =>
+        int.TryParse(Text(counts, "count"), out int c) ? c : 0;
+
+    private static int Users(JsonElement counts) =>
+        counts.TryGetProperty("userCount", out JsonElement u) && u.TryGetInt32(out int uc) ? uc : 0;
+
+    /// <summary>
+    /// The cursor of the next page, from a Link header. Sentry always sends a next link, and says
+    /// whether anything is behind it in its results attribute.
+    /// </summary>
+    public static string? NextCursor(string? link)
+    {
+        if (string.IsNullOrEmpty(link)) return null;
+
+        foreach (string part in link.Split(','))
+        {
+            if (!part.Contains("rel=\"next\"", StringComparison.Ordinal)) continue;
+            if (!part.Contains("results=\"true\"", StringComparison.Ordinal)) return null;
+
+            const string marker = "cursor=\"";
+            int start = part.IndexOf(marker, StringComparison.Ordinal);
+            if (start < 0) return null;
+            start += marker.Length;
+            int end = part.IndexOf('"', start);
+            return end < 0 ? null : part[start..end];
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -231,7 +308,11 @@ public sealed class SentryApiClient : IDisposable
         && DateTimeOffset.TryParse(e.GetString(), out DateTimeOffset value)
             ? value : DateTimeOffset.MinValue;
 
-    private async Task<JsonDocument> GetAsync(string url, CancellationToken ct)
+    private async Task<JsonDocument> GetAsync(string url, CancellationToken ct) =>
+        (await GetPageAsync(url, ct)).Doc;
+
+    /// <summary>A response with the Link header that says where the next page is.</summary>
+    private async Task<(JsonDocument Doc, string? Link)> GetPageAsync(string url, CancellationToken ct)
     {
         Log.Info($"GET {url}");
         HttpResponseMessage resp = await _http.GetAsync(url, ct);
@@ -249,7 +330,10 @@ public sealed class SentryApiClient : IDisposable
                 $"{(int)resp.StatusCode} {resp.ReasonPhrase}: {Truncate(body, 200)}");
         }
 
-        return await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        string? link = resp.Headers.TryGetValues("Link", out IEnumerable<string>? values)
+            ? string.Join(",", values) : null;
+
+        return (await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct), link);
     }
 
     private static string Truncate(string value, int max) =>

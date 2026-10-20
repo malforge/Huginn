@@ -49,7 +49,7 @@
                            TextTrimming="CharacterEllipsis">
                     <Run Text="muted at"/>
                     <Run Text="{Binding MutedAtUserCount}"/>
-                    <Run Text="users · returns if it doubles or regresses"/>
+                    <Run Text="users in 14d · returns if that doubles or it regresses"/>
                 </TextBlock>
             </StackPanel>
 

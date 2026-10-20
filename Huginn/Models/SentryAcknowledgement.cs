@@ -9,4 +9,10 @@ public sealed class SentryAcknowledgement
     public int UserCount { get; set; }
 
     public int EventCount { get; set; }
+
+    /// <summary>
+    /// The window the counts cover, in Sentry's period notation. Empty for a mute saved before
+    /// the window was recorded, whose counts covered a single day.
+    /// </summary>
+    public string Window { get; set; } = "";
 }

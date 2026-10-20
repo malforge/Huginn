@@ -13,8 +13,6 @@ namespace Huginn.Services;
 /// </summary>
 public sealed class SentryMonitor
 {
-    private readonly HashSet<string> _knownRegressionIds = [];
-
     /// <summary>Cached releases per issue, with the time they were read.</summary>
     private readonly Dictionary<string, (DateTimeOffset Read, string First, string Last)> _releases = [];
 
@@ -31,72 +29,104 @@ public sealed class SentryMonitor
     /// </summary>
     private static readonly TimeSpan ReleaseCacheLifetime = TimeSpan.FromHours(1);
 
-    /// <summary>Reach below this never raises an issue on its own, however quiet the day is.</summary>
-    private const int MinUsersToRaise = 5;
+    /// <summary>
+    /// How far before the last check an issue may have been first seen and still count as new.
+    /// Sentry can list an issue a little after its first event, so one that was not yet listed
+    /// when Huginn last looked must not be missed for having been first seen just before it.
+    /// </summary>
+    private static readonly TimeSpan NewSlack = TimeSpan.FromHours(1);
 
     /// <summary>
-    /// Share of everyone hit in the window that makes a single issue worth raising by itself.
-    /// A share rather than a fixed count so the bar rises with the day: a busy morning raises
-    /// only what dominates it, and a quiet one raises nothing rather than promoting a stray crash.
+    /// Age past which an issue is no longer called new, however long the alert has gone unread.
+    /// The listing window, so the label never contradicts the date on the card.
     /// </summary>
-    private const double ImpactShare = 0.05;
+    private static readonly TimeSpan NewFor = TimeSpan.FromDays(14);
 
+    /// <param name="IsComplete">
+    /// False when there were more issues than one poll reads, so the list is not everything.
+    /// </param>
     public record SentrySnapshot(
         List<SentryIssueItem> Issues,
         List<SentryIssueItem> NewIssues,
         List<SentryIssueItem> Regressions,
-        List<SentryIssueItem> Escalations);
+        List<SentryIssueItem> Escalations,
+        bool IsComplete);
 
     public async Task<SentrySnapshot> PollAsync(
         SentryApiClient client, AppSettings settings, CancellationToken ct)
     {
-        List<SentryIssueItem> issues = await client.GetIssuesAsync(
-            settings.SentryOrganization, settings.WatchedSentryProjects, ct: ct);
+        (List<SentryIssueItem> issues, bool complete) = await client.GetIssuesAsync(
+            settings.SentryOrganization, settings.WatchedSentryProjects, ct);
 
+        return Evaluate(issues, settings, DateTimeOffset.UtcNow, complete);
+    }
+
+    /// <summary>Decides what a poll's issues raise, and in what order they are listed.</summary>
+    public SentrySnapshot Evaluate(
+        List<SentryIssueItem> issues, AppSettings settings, DateTimeOffset now, bool isComplete = true)
+    {
         List<SentryIssueItem> newIssues = [];
         List<SentryIssueItem> regressions = [];
         List<SentryIssueItem> escalations = [];
 
+        // Null on the very first poll, and on the first one after the check time was kept, so
+        // both take a baseline rather than announcing a backlog.
+        DateTimeOffset? lastChecked = settings.SentryCheckedAt;
+
         foreach (SentryIssueItem issue in issues)
         {
-            // A muted issue that has returned or roughly doubled stops being muted, so an
-            // unfixable crash goes quiet without going silent for good.
-            if (settings.HasOutgrownMute(issue.Id, issue.UserCount, issue.EventCount, issue.IsRegression))
+            // A mute measured over another window cannot be compared with these counts, so it is
+            // measured again at its current size rather than lifted for a change of units.
+            if (settings.IsSentryMuteMeasuredElsewhere(issue.Id) && !issue.IsRegression)
+                settings.MuteSentryIssue(issue.Id, issue.RecentUserCount, issue.RecentEventCount);
+
+            // A muted issue that has returned or whose recent reach roughly doubled stops being
+            // muted, so an unfixable crash goes quiet without going silent for good. Recent
+            // rather than lifetime reach, which only ever grows and would double eventually
+            // without anything getting worse.
+            if (settings.HasOutgrownMute(
+                    issue.Id, issue.RecentUserCount, issue.RecentEventCount, issue.IsRegression))
             {
                 settings.UnmuteSentryIssue(issue.Id);
-                if (settings.SentryBaselineTaken) escalations.Add(issue);
+                if (lastChecked is not null) escalations.Add(issue);
             }
 
             if (settings.MutedSentryIssues.TryGetValue(issue.Id, out var muted))
                 issue.MutedAtUserCount = muted.UserCount;
-
         }
 
         HashSet<string> known = [.. settings.KnownSentryIssues];
+        HashSet<string> knownRegressions = [.. settings.KnownSentryRegressions];
 
-        if (settings.SentryBaselineTaken)
+        foreach (SentryIssueItem issue in issues)
         {
-            foreach (SentryIssueItem issue in issues)
+            if (lastChecked is null)
             {
-                if (!known.Contains(issue.Id))
-                {
-                    // A muted issue cannot also be new, so no mute check is needed here.
-                    newIssues.Add(issue);
-                }
-                else if (issue.IsRegression && _knownRegressionIds.Add(issue.Id))
-                {
-                    // Already known, but Sentry has since marked it as returned.
-                    regressions.Add(issue);
-                }
+                if (issue.IsRegression) knownRegressions.Add(issue.Id);
+                continue;
+            }
+
+            // New means Sentry first saw it since Huginn last looked. Being absent from the last
+            // poll is not enough: an issue that went quiet for a while and came back is still as
+            // old as it was.
+            if (!known.Contains(issue.Id) && issue.FirstSeen >= lastChecked.Value - NewSlack)
+            {
+                // A muted issue cannot also be new, so no mute check is needed here.
+                newIssues.Add(issue);
+            }
+            else if (issue.IsRegression && knownRegressions.Add(issue.Id))
+            {
+                // Sentry has marked it as returned since it was last raised as such.
+                regressions.Add(issue);
             }
         }
-        else
-        {
-            foreach (SentryIssueItem issue in issues)
-                if (issue.IsRegression) _knownRegressionIds.Add(issue.Id);
-        }
 
-        settings.SetSentryBaseline(issues.Select(i => i.Id));
+        // An issue that stops being a regression can regress again later. Only a complete list
+        // can say it has stopped, though: one cut short is missing issues, not their state.
+        if (isComplete)
+            knownRegressions.IntersectWith(issues.Where(i => i.IsRegression).Select(i => i.Id));
+
+        settings.SetSentryBaseline(issues.Select(i => i.Id), knownRegressions, now);
 
         // Anything raised stays raised until the user dismisses it, so the flag is persisted
         // rather than held for the lifetime of the process.
@@ -104,41 +134,31 @@ public sealed class SentryMonitor
         foreach (SentryIssueItem issue in regressions) settings.FlagSentryIssue(issue.Id, "regressed");
         foreach (SentryIssueItem issue in escalations) settings.FlagSentryIssue(issue.Id, "worse");
 
-        settings.PruneSentryFlags([.. issues.Select(i => i.Id)]);
-
-        int threshold = ImpactThreshold(issues, settings);
-
+        // The new label says how old an issue is, so it comes down once that stops being true,
+        // read or not. The issue itself stays listed by its reach.
         foreach (SentryIssueItem issue in issues)
         {
-            // Reach is current state, so unlike the change-driven reasons it is recomputed every
-            // poll rather than pinned until dismissed. Pinning would let the list accrete issues
-            // that went quiet weeks ago. Muting is how the user silences one of these.
-            issue.IsWidespread = issue.UserCount >= threshold
-                                 && !settings.IsSentryIssueMuted(issue.Id);
-
-            issue.ApplyRaise(
-                settings.IsSentryIssueFlagged(issue.Id),
-                settings.GetSentryFlagReason(issue.Id));
+            if (settings.GetSentryFlagReason(issue.Id) == "new" && now - issue.FirstSeen > NewFor)
+                settings.DismissSentryIssue(issue.Id);
         }
 
-        // Outstanding alerts first, then whatever affects most people.
-        issues.Sort((a, b) =>
-        {
-            int rank = Rank(b).CompareTo(Rank(a));
-            if (rank != 0) return rank;
-            int users = b.UserCount.CompareTo(a.UserCount);
-            return users != 0 ? users : b.EventCount.CompareTo(a.EventCount);
-        });
+        if (isComplete) settings.PruneSentryFlags([.. issues.Select(i => i.Id)]);
 
-        // An issue that stops being a regression can regress again later.
-        _knownRegressionIds.IntersectWith(issues.Where(i => i.IsRegression).Select(i => i.Id));
+        // Only a change raises an issue. Size is a ranking, shown as the top of the list, so it
+        // cannot be swamped by one huge issue setting a bar nothing else reaches.
+        foreach (SentryIssueItem issue in issues)
+            issue.ApplyRaise(settings.IsSentryIssueFlagged(issue.Id), settings.GetSentryFlagReason(issue.Id));
+
+        List<SentryIssueItem> ranked = [.. Ranked(issues, allTime: false)];
+        issues.Clear();
+        issues.AddRange(ranked);
 
         // An issue worth alerting on is worth an up-to-date version, since that is the first
         // thing asked of the alert.
         foreach (SentryIssueItem issue in newIssues.Concat(regressions).Concat(escalations))
             _releases.Remove(issue.Id);
 
-        return new SentrySnapshot(issues, newIssues, regressions, escalations);
+        return new SentrySnapshot(issues, newIssues, regressions, escalations, isComplete);
     }
 
     /// <summary>
@@ -185,25 +205,23 @@ public sealed class SentryMonitor
         }
     }
 
-    /// <summary>
-    /// How many users an issue must reach before it is raised on reach alone. Muted issues are
-    /// left out of the total, so silencing the loudest crash does not drag the bar down with it.
-    /// </summary>
-    private static int ImpactThreshold(List<SentryIssueItem> issues, AppSettings settings)
-    {
-        int totalUsers = issues
-            .Where(i => !settings.IsSentryIssueMuted(i.Id))
-            .Sum(i => i.UserCount);
-
-        return Math.Max(MinUsersToRaise, (int)Math.Ceiling(totalUsers * ImpactShare));
-    }
-
-    /// <summary>Pins an outstanding alert above anything that is merely large.</summary>
-    private static int Rank(SentryIssueItem issue) => issue.IsFlagged ? 1 : 0;
+    /// <summary>Most people reached first, over the last fortnight or over all time.</summary>
+    /// <remarks>
+    /// The fortnight says what is hurting people now, and lets a crash that was mostly fixed long
+    /// ago drop down. All time says how much a long-running crash has cost. The other count breaks
+    /// a tie, then events.
+    /// </remarks>
+    public static IEnumerable<SentryIssueItem> Ranked(IEnumerable<SentryIssueItem> issues, bool allTime) =>
+        allTime
+            ? issues.OrderByDescending(i => i.UserCount)
+                .ThenByDescending(i => i.RecentUserCount)
+                .ThenByDescending(i => i.EventCount)
+            : issues.OrderByDescending(i => i.RecentUserCount)
+                .ThenByDescending(i => i.UserCount)
+                .ThenByDescending(i => i.RecentEventCount);
 
     public void Reset()
     {
-        _knownRegressionIds.Clear();
         _releases.Clear();
     }
 

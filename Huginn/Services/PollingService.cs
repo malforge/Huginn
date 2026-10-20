@@ -132,7 +132,8 @@ public sealed class PollingService : IDisposable
     }
 
     public event Action<string>? SentryFailed;
-    public event Action<List<SentryIssueItem>>? SentryPolled;
+    /// <summary>The issues, and whether that is every one of them or only as many as a poll reads.</summary>
+    public event Action<List<SentryIssueItem>, bool>? SentryPolled;
     public event Action<List<ServiceFinding>>? NewServiceFindingsDetected;
     public event Action<string>? AppInsightsFailed;
     public event Action<List<ServiceFinding>>? AppInsightsPolled;
@@ -314,7 +315,7 @@ public sealed class PollingService : IDisposable
 
             // Show the issues straight away. Versions arrive in a second pass because each one
             // costs a throttled request, and an issue without its version is still worth seeing.
-            SentryPolled?.Invoke(snapshot.Issues);
+            SentryPolled?.Invoke(snapshot.Issues, snapshot.IsComplete);
 
             SentryAlerts alerts = new(snapshot.NewIssues, snapshot.Regressions, snapshot.Escalations);
             if (alerts.Total > 0) SentryAlertsDetected?.Invoke(alerts);
@@ -322,7 +323,7 @@ public sealed class PollingService : IDisposable
             await _sentryMonitor.EnrichReleasesAsync(
                 _sentry, _settings.SentryOrganization, snapshot.Issues, ct);
 
-            SentryPolled?.Invoke(snapshot.Issues);
+            SentryPolled?.Invoke(snapshot.Issues, snapshot.IsComplete);
             _sentryLastPolled = DateTimeOffset.UtcNow;
             return snapshot;
         }
