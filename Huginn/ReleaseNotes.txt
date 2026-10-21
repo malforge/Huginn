@@ -1,4 +1,6 @@
 v.1.7.1
+   - New: each source's desktop notifications can be turned off under Settings, General, Notifications: pull requests, failed builds, crashes and service findings. Panes and the badge still show everything. All are on unless turned off.
+   - The checkbox that read "Notify me when my builds fail" decided whether your own builds are watched at all, cards included. It now says so: "Watch builds I started".
    - Fixed: a failure seen in too few recorded requests to judge was dropped without a trace, so a broken route of ours that is only lightly sampled could never appear. It is now listed under Settings, Held back, saying how little was recorded, and each section of the services pane ends with how many of its kind were held back this way. Always showing an entry overrides the threshold.
    - Fixed: opening a failing route in the portal showed no results whenever its failures threw nothing, which is every 404 and every handled error. It opened on the exceptions alone. It now opens on the failed requests themselves, with any exception and stack trace beside them, and each row says how many calls it stands for under sampling, so the rows add up to the count on the card. An agent asking why a route fails gets its failures the same way.
 

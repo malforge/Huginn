@@ -232,6 +232,13 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// <summary>Whether the portal explainer is shown before a finding opens in the browser.</summary>
     [ObservableProperty] private bool _explainPortalView;
 
+    // Whether each source may interrupt. Read straight from these rather than from settings, so a
+    // switch takes effect the moment it is changed rather than when the panel closes.
+    [ObservableProperty] private bool _notifyPullRequests;
+    [ObservableProperty] private bool _notifyBuilds;
+    [ObservableProperty] private bool _notifyCrashes;
+    [ObservableProperty] private bool _notifyServices;
+
     /// <summary>Whether the portal explainer is on screen right now.</summary>
     [ObservableProperty] private bool _isPortalHintVisible;
 
@@ -325,6 +332,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         SentryToken = _settings.GetSentryToken() ?? "";
         MonitorMyBuilds = _settings.MonitorMyBuilds;
         ExplainPortalView = _settings.ExplainPortalView;
+        NotifyPullRequests = _settings.NotifyPullRequests;
+        NotifyBuilds = _settings.NotifyBuilds;
+        NotifyCrashes = _settings.NotifyCrashes;
+        NotifyServices = _settings.NotifyServices;
         RankCrashesByAllTime = _settings.RankSentryByAllTime;
         AutoStartEnabled = _autoStart.IsEnabled;
 
@@ -497,6 +508,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         SaveAppInsightsConnection();
         _settings.MonitorMyBuilds = MonitorMyBuilds;
         _settings.ExplainPortalView = ExplainPortalView;
+        _settings.NotifyPullRequests = NotifyPullRequests;
+        _settings.NotifyBuilds = NotifyBuilds;
+        _settings.NotifyCrashes = NotifyCrashes;
+        _settings.NotifyServices = NotifyServices;
 
         // Only when the picker actually holds the list. Deriving from an empty collection would
         // silently erase the selection every time the list failed to load.
@@ -2030,6 +2045,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnNewPullRequestsDetected(List<PullRequestItem> prs)
         => Dispatcher.UIThread.Post(() =>
         {
+            if (!NotifyPullRequests) return;
+
             if (prs.Count == 1)
             {
                 PullRequestItem pr = prs[0];
@@ -2049,6 +2066,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnNewBuildFailuresDetected(List<BuildItem> builds)
         => Dispatcher.UIThread.Post(() =>
         {
+            if (!NotifyBuilds) return;
+
             if (builds.Count == 1)
             {
                 BuildItem build = builds[0];
@@ -2067,6 +2086,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnSentryAlertsDetected(SentryAlerts alerts)
         => Dispatcher.UIThread.Post(() =>
         {
+            if (!NotifyCrashes) return;
+
             if (alerts.Total == 1)
             {
                 SentryIssueItem issue = alerts.All.First();
@@ -2221,6 +2242,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnNewServiceFindingsDetected(List<ServiceFinding> findings)
         => Dispatcher.UIThread.Post(() =>
         {
+            if (!NotifyServices) return;
+
             if (findings.Count == 1)
             {
                 ServiceFinding finding = findings[0];

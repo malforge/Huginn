@@ -217,6 +217,22 @@ public sealed partial class AppSettings
     public bool RankSentryByAllTime { get; set; }
 
     /// <summary>
+    /// Whether each source may interrupt with a desktop notification. Only the interruption: the
+    /// panes and the badge show everything either way. On unless turned off, so settings saved
+    /// before these existed keep notifying as they did.
+    /// </summary>
+    public bool NotifyPullRequests { get; set; } = true;
+
+    /// <inheritdoc cref="NotifyPullRequests"/>
+    public bool NotifyBuilds { get; set; } = true;
+
+    /// <inheritdoc cref="NotifyPullRequests"/>
+    public bool NotifyCrashes { get; set; } = true;
+
+    /// <inheritdoc cref="NotifyPullRequests"/>
+    public bool NotifyServices { get; set; } = true;
+
+    /// <summary>
     /// What an agent presents to reach the MCP endpoint. Made once and kept, so a registration
     /// stays valid across restarts and updates.
     /// </summary>
@@ -523,6 +539,10 @@ public sealed partial class AppSettings
             AcknowledgedPrIds = AcknowledgedPrIds,
             ExplainPortalView = ExplainPortalView,
             RankSentryByAllTime = RankSentryByAllTime,
+            NotifyPullRequests = NotifyPullRequests,
+            NotifyBuilds = NotifyBuilds,
+            NotifyCrashes = NotifyCrashes,
+            NotifyServices = NotifyServices,
             AgentToken = AgentToken,
         }, SettingsJsonContext.Default.SettingsDto);
         File.WriteAllText(SettingsPath, json);
@@ -579,6 +599,10 @@ public sealed partial class AppSettings
                 AcknowledgedPrIds = dto.AcknowledgedPrIds ?? [],
                 ExplainPortalView = dto.ExplainPortalView,
                 RankSentryByAllTime = dto.RankSentryByAllTime,
+                NotifyPullRequests = dto.NotifyPullRequests,
+                NotifyBuilds = dto.NotifyBuilds,
+                NotifyCrashes = dto.NotifyCrashes,
+                NotifyServices = dto.NotifyServices,
                 AgentToken = dto.AgentToken ?? "",
             };
         }
@@ -626,6 +650,10 @@ public sealed partial class AppSettings
         public List<int>? AcknowledgedPrIds { get; set; }
         public bool ExplainPortalView { get; set; } = true;
         public bool RankSentryByAllTime { get; set; }
+        public bool NotifyPullRequests { get; set; } = true;
+        public bool NotifyBuilds { get; set; } = true;
+        public bool NotifyCrashes { get; set; } = true;
+        public bool NotifyServices { get; set; } = true;
         public string? AgentToken { get; set; }
     }
 

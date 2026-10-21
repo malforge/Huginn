@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Huginn.Tests;
 
+[Collection(SettingsFile.Name)]
 public sealed class SentryMonitorTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 20, 10, 0, 0, TimeSpan.Zero);

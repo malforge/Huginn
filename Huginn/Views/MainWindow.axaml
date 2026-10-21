@@ -287,8 +287,10 @@
                                     <TextBlock Classes="group" Text="What to watch"/>
 
                                     <CheckBox IsChecked="{Binding MonitorMyBuilds}">
-                                        <TextBlock Text="Notify me when my builds fail" TextWrapping="Wrap"/>
+                                        <TextBlock Text="Watch builds I started" TextWrapping="Wrap"/>
                                     </CheckBox>
+                                    <TextBlock Classes="pagenote"
+                                               Text="Your own failed builds get a card. Whether they also notify is under General, Notifications."/>
 
                                     <TextBlock Text="Pipelines" FontSize="12" FontWeight="SemiBold"
                                                Opacity="0.8" Margin="0,8,0,0"/>
@@ -770,7 +772,23 @@
                             <TextBlock Classes="pagenote"
                                        Text="Watching starts when you log in rather than when you remember to open it."/>
 
-                            <CheckBox IsChecked="{Binding ExplainPortalView}" Margin="0,8,0,0">
+                            <TextBlock Classes="group" Text="Notifications" Margin="0,12,0,0"/>
+                            <TextBlock Classes="pagenote"
+                                       Text="What may interrupt you with a desktop notification. Panes and the badge show everything either way."/>
+                            <CheckBox IsChecked="{Binding NotifyPullRequests}">
+                                <TextBlock Text="Pull requests waiting for your review" TextWrapping="Wrap"/>
+                            </CheckBox>
+                            <CheckBox IsChecked="{Binding NotifyBuilds}">
+                                <TextBlock Text="Failed builds, yours and watched pipelines" TextWrapping="Wrap"/>
+                            </CheckBox>
+                            <CheckBox IsChecked="{Binding NotifyCrashes}">
+                                <TextBlock Text="Crashes that are new, have returned or have grown" TextWrapping="Wrap"/>
+                            </CheckBox>
+                            <CheckBox IsChecked="{Binding NotifyServices}">
+                                <TextBlock Text="Service findings new since the last check" TextWrapping="Wrap"/>
+                            </CheckBox>
+
+                            <CheckBox IsChecked="{Binding ExplainPortalView}" Margin="0,12,0,0">
                                 <TextBlock Text="Explain the Azure portal before opening a finding" TextWrapping="Wrap"/>
                             </CheckBox>
                             <TextBlock Classes="pagenote"
