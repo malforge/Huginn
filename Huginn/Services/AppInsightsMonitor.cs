@@ -146,10 +146,12 @@ public sealed class AppInsightsMonitor
 
             finding.IsMuted = settings.IsFindingMuted(finding.Id);
             finding.MutedAtMagnitude = settings.GetFindingMutedAt(finding.Id);
-            finding.FlagReason = finding.KindLabel;
+            // The section heading already names the kind, so the pill says only what changed.
+            bool isNew = !finding.IsMuted && _known.Add(finding.Id) && _hasBaseline;
+            finding.IsFlagged = isNew;
+            finding.FlagReason = isNew ? "new" : "";
 
-            if (!finding.IsMuted && _known.Add(finding.Id) && _hasBaseline)
-                raised.Add(finding);
+            if (isNew) raised.Add(finding);
         }
 
         _hasBaseline = true;

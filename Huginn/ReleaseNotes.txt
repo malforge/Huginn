@@ -8,6 +8,7 @@ v.1.7.0
    - A muted crash comes back when its reach over the last 14 days doubles. Mutes saved earlier are measured again at their current size rather than lifted.
    - Fixed: service findings were built on counts scaled up by sampling, so one recorded failed request could show as a route failing every one of dozens of calls. Rules are now judged on requests actually recorded, estimated counts are marked ~, and each card says how many were recorded, the users seen failing, and when it last failed.
    - A failing dependency is one card whatever codes it failed with, and says what share of its calls failed. It was one card per code, each with the sparkline of all of them.
+   - The services pane lists findings by kind, each under a heading that says how it is ranked: failing routes, silent resources, failing dependencies, exceptions, then slow routes. A kind with nothing wrong says so rather than being left out. The window every finding is measured over is shown and can be changed in the pane itself, and the pill on a card says only that it is new since the last check.
    - New: exceptions thrown with no failed request behind them, such as in background work or a failure that was caught, are a finding of their own. A failing route already shows what it threw, so these were the ones nothing showed.
    - Fixed: a resource whose traffic was spread across many quiet routes was reported as having no requests at all.
    - Fixed: numbers on service cards followed the machine's regional settings, e.g. "p95 54,0s" and "1 692 calls".

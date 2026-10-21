@@ -58,6 +58,16 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<ServiceFinding> ServiceActions { get; } = [];
 
+    /// <summary>The findings by kind, most severe kind first, each ranked as its heading says.</summary>
+    public IReadOnlyList<ServiceSection> ServiceSections { get; } =
+    [
+        new() { Kind = FindingKind.FailureRate, Heading = "FAILING ROUTES · MOST FAILED CALLS" },
+        new() { Kind = FindingKind.NoTraffic, Heading = "SILENT RESOURCES · NO REQUESTS IN THE WINDOW" },
+        new() { Kind = FindingKind.Dependency, Heading = "FAILING DEPENDENCIES · MOST FAILED CALLS" },
+        new() { Kind = FindingKind.Exception, Heading = "EXCEPTIONS OUTSIDE A FAILED REQUEST · MOST THROWN" },
+        new() { Kind = FindingKind.Latency, Heading = "SLOW ROUTES · SLOWEST AT P95" },
+    ];
+
     /// <summary>
     /// What the rules kept off the board, so a filter cannot hide something without saying so.
     /// </summary>
@@ -906,10 +916,24 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         AppInsightsStatus, _serviceLastPolled,
         "Nothing raised. Failing routes, slow routes and dead resources appear here.");
 
+    /// <summary>
+    /// Whether the services pane knows anything yet. Until it does, the reason is said once at the
+    /// top rather than every section claiming to have nothing in it.
+    /// </summary>
+    public bool IsServiceStateUnknown => AppInsightsStatus.NeedsAttention || _serviceLastPolled is null;
+
+    /// <summary>What an empty section says, which depends on whether anything is known at all.</summary>
+    public string ServiceSectionEmptyText =>
+        IsServiceStateUnknown ? "Not known yet."
+        : ShowMutedServices ? "None muted."
+        : "None right now.";
+
     private void RefreshPaneStatuses()
     {
         OnPropertyChanged(nameof(CrashEmptyText));
         OnPropertyChanged(nameof(ServiceEmptyText));
+        OnPropertyChanged(nameof(IsServiceStateUnknown));
+        OnPropertyChanged(nameof(ServiceSectionEmptyText));
 
         AdoPaneStatus = PaneLine(AdoStatus, _adoLastPolled, true);
         SentryPaneStatus = PaneLine(SentryStatus, _sentryLastPolled, CrashActions.Count > 0);
@@ -973,6 +997,11 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         Sync(ServiceActions, _lastFindings.Where(f => f.IsMuted == ShowMutedServices));
 
+        foreach (ServiceSection section in ServiceSections)
+            Sync(section.Findings, ServiceActions.Where(f => f.Kind == section.Kind));
+
+        OnPropertyChanged(nameof(ServiceSectionEmptyText));
+
         Summarise(ServiceSummaries, _lastFindings
             .GroupBy(f => f.ResourceName)
             .OrderBy(g => g.Key)
@@ -982,9 +1011,13 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
     partial void OnSelectedWindowChanged(WindowChoice? value)
     {
-        if (value is null) return;
+        if (value is null || _settings.AppInsightsWindowMinutes == value.Minutes) return;
         _settings.AppInsightsWindowMinutes = value.Minutes;
         _settings.Save();
+
+        // The pane says which window it shows, so a change is measured straight away rather than
+        // leaving the old window's findings under the new name until the next scheduled check.
+        _ = RefreshAsync(force: true);
     }
 
     partial void OnShowMutedCrashesChanged(bool value) => RebuildSentryList();
