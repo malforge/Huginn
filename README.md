@@ -34,7 +34,8 @@ Built on [Avalonia](https://avaloniaui.net/) and .NET 10.
   routes at the 95th percentile, failing dependencies, exceptions thrown
   outside any failed request, and resources that have gone silent. Ordered by severity rather than raw magnitude, and
   failures name their result codes. Rules are judged on requests actually
-  recorded rather than on counts scaled up by sampling, and each card says
+  recorded rather than on counts scaled up by sampling, and what is too thinly
+  recorded to judge is held back in sight rather than dropped. Each card says
   what it rests on: how much was recorded, the users seen failing, and when it
   last failed. Opening one lands in the portal on the query behind it: the
   failed requests of a failing route, with any exception and stack trace

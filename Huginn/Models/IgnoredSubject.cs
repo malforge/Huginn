@@ -12,4 +12,10 @@ namespace Huginn.Models;
 /// <param name="Resource">The resource it was seen on.</param>
 /// <param name="Pattern">The pattern that matched it.</param>
 /// <param name="Calls">How many calls it accounted for in the window.</param>
-public sealed record IgnoredSubject(string Subject, string Resource, string Pattern, long Calls);
+/// <param name="Kind">The finding it would have been, where a rule rather than a pattern held it.</param>
+/// <param name="TooFewRecorded">
+/// Held back because too little of it was recorded to judge, rather than for what it is.
+/// </param>
+public sealed record IgnoredSubject(
+    string Subject, string Resource, string Pattern, long Calls,
+    FindingKind? Kind = null, bool TooFewRecorded = false);

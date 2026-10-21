@@ -200,7 +200,7 @@ public sealed class AppInsightsMonitor
                         recorded = count(),
                         users = dcountif(user_AuthenticatedId, success == false and isnotempty(user_AuthenticatedId))
                       by name
-            | where recorded >= {MinimumRecorded}
+            | where recorded >= {MinimumRecorded} or failed > 0 or p95 >= {LatencyThresholdMs}
             """, ct);
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -219,11 +219,11 @@ public sealed class AppInsightsMonitor
                         failedRecorded = countif(success == false),
                         users = dcountif(user_AuthenticatedId, success == false and isnotempty(user_AuthenticatedId))
                       by type, target
-            | where failedRecorded >= {DependencyFailureThreshold}
+            | where failed > 0
             | order by failed desc
             """, ct);
 
-        findings.AddRange(FromDependencies(dependencies, component, windowMinutes, now));
+        findings.AddRange(FromDependencies(dependencies, component, windowMinutes, settings, suppressed, now));
 
         // Exceptions behind a failed request are already on that route's card, so only the rest
         // are counted here. problemId groups by type and throwing method, as the portal does.
@@ -242,11 +242,10 @@ public sealed class AppInsightsMonitor
                         operation = take_anyif(operation_Name, isnotempty(operation_Name)),
                         lastThrown = max(timestamp)
                       by problemId
-            | where recorded >= {MinimumRecorded}
             | order by thrown desc
             """, ct);
 
-        findings.AddRange(FromExceptions(exceptions, component, windowMinutes, now));
+        findings.AddRange(FromExceptions(exceptions, component, windowMinutes, settings, suppressed, now));
 
         await AddTrendsAsync(client, component, findings, windowMinutes, ct);
 
@@ -301,8 +300,10 @@ public sealed class AppInsightsMonitor
             long failed = Number(row, failedAt);
             double p95 = Number(row, p95At);
 
-            // The query filters on this too; it is held here so the rule does not depend on it.
-            if (recorded < MinimumRecorded) continue;
+            // Too little recorded to judge is held back where it can be seen, never dropped:
+            // a broken route of ours that is only lightly sampled must not vanish. Asking for a
+            // route to be shown overrides it.
+            bool thin = recorded < MinimumRecorded && !settings.IsAlwaysShown(name);
 
             bool sampled = recorded != total;
 
@@ -323,8 +324,12 @@ public sealed class AppInsightsMonitor
                     name, component.Name,
                     $"mostly 404 and under {MinimumCallsWhenMostly404} calls", total));
             }
+            else if (rate >= FailureRateThreshold && thin)
+            {
+                suppressed.Add(TooFew(name, component, FindingKind.FailureRate, $"{Count(recorded)} recorded", total));
+            }
 
-            if (rate >= FailureRateThreshold && !probeShaped)
+            if (rate >= FailureRateThreshold && !probeShaped && !thin)
             {
                 findings.Add(new ServiceFinding
                 {
@@ -344,7 +349,11 @@ public sealed class AppInsightsMonitor
                 });
             }
 
-            if (p95 >= LatencyThresholdMs)
+            if (p95 >= LatencyThresholdMs && thin)
+            {
+                suppressed.Add(TooFew(name, component, FindingKind.Latency, $"{Count(recorded)} recorded", total));
+            }
+            else if (p95 >= LatencyThresholdMs)
             {
                 findings.Add(new ServiceFinding
                 {
@@ -366,7 +375,8 @@ public sealed class AppInsightsMonitor
     }
 
     public static List<ServiceFinding> FromDependencies(
-        QueryTable dependencies, AppInsightsComponent component, int windowMinutes, DateTimeOffset now)
+        QueryTable dependencies, AppInsightsComponent component, int windowMinutes,
+        AppSettings settings, List<IgnoredSubject> heldBack, DateTimeOffset now)
     {
         List<ServiceFinding> findings = [];
 
@@ -387,8 +397,15 @@ public sealed class AppInsightsMonitor
             long failedRecorded = Number(row, failedRecordedAt);
             string target = Text(row, targetAt);
 
-            // The query filters on this too; it is held here so the rule does not depend on it.
-            if (failedRecorded < DependencyFailureThreshold) continue;
+            string subject = $"{Text(row, typeAt)} {target}".Trim();
+
+            if (failedRecorded < DependencyFailureThreshold && !settings.IsAlwaysShown(subject))
+            {
+                heldBack.Add(TooFew(
+                    subject, component, FindingKind.Dependency,
+                    $"{Count(failedRecorded)} failure{(failedRecorded == 1 ? "" : "s")} recorded", calls));
+                continue;
+            }
 
             bool callsSampled = Number(row, recordedAt) != calls;
             bool failuresSampled = failedRecorded != failed;
@@ -425,7 +442,8 @@ public sealed class AppInsightsMonitor
     /// work, and failures that were caught and logged.
     /// </summary>
     public static List<ServiceFinding> FromExceptions(
-        QueryTable exceptions, AppInsightsComponent component, int windowMinutes, DateTimeOffset now)
+        QueryTable exceptions, AppInsightsComponent component, int windowMinutes,
+        AppSettings settings, List<IgnoredSubject> heldBack, DateTimeOffset now)
     {
         List<ServiceFinding> findings = [];
 
@@ -442,8 +460,13 @@ public sealed class AppInsightsMonitor
             long thrown = Number(row, thrownAt);
             long recorded = Number(row, recordedAt);
 
-            // The query filters on this too; it is held here so the rule does not depend on it.
-            if (recorded < MinimumRecorded) continue;
+            string problem = Text(row, problemAt);
+
+            if (recorded < MinimumRecorded && !settings.IsAlwaysShown(problem))
+            {
+                heldBack.Add(TooFew(problem, component, FindingKind.Exception, $"{Count(recorded)} recorded", thrown));
+                continue;
+            }
 
             bool sampled = recorded != thrown;
             long operations = Number(row, operationsAt);
@@ -473,6 +496,11 @@ public sealed class AppInsightsMonitor
 
         return findings;
     }
+
+    /// <summary>Something held back for having too little recorded to judge, saying how little.</summary>
+    private static IgnoredSubject TooFew(
+        string subject, AppInsightsComponent component, FindingKind kind, string recorded, long calls) =>
+        new(subject, component.Name, $"only {recorded}, too few to judge", calls, kind, TooFewRecorded: true);
 
     /// <summary>Copy is en-US whatever the machine is set to, so a finding reads the same everywhere.</summary>
     private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-US");

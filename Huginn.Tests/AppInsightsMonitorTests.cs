@@ -26,6 +26,12 @@ public sealed class AppInsightsMonitorTests
     private static List<ServiceFinding> FromRoutes(QueryTable routes) =>
         AppInsightsMonitor.FromRoutes(routes, Component, 720, new AppSettings(new NoCredentials()), [], Now);
 
+    private static List<ServiceFinding> FromDependencies(QueryTable dependencies, List<IgnoredSubject>? heldBack = null) =>
+        AppInsightsMonitor.FromDependencies(dependencies, Component, 720, new AppSettings(new NoCredentials()), heldBack ?? [], Now);
+
+    private static List<ServiceFinding> FromExceptions(QueryTable exceptions, List<IgnoredSubject>? heldBack = null) =>
+        AppInsightsMonitor.FromExceptions(exceptions, Component, 720, new AppSettings(new NoCredentials()), heldBack ?? [], Now);
+
     [Fact]
     public void A_failing_route_says_how_much_was_recorded_who_it_hit_and_when_it_last_failed()
     {
@@ -38,10 +44,45 @@ public sealed class AppInsightsMonitorTests
     }
 
     [Fact]
-    public void A_route_seen_in_too_few_recorded_requests_is_not_judged_however_many_they_stand_for()
+    public void A_route_failing_in_too_few_recorded_requests_is_held_back_and_says_why()
     {
-        Assert.Empty(FromRoutes(Routes(
-            ["GET /api/teams/range", "30", "1", "30", "0", "120", "498", "1", "2026-10-20T09:00:00Z"])));
+        List<IgnoredSubject> heldBack = [];
+
+        List<ServiceFinding> findings = AppInsightsMonitor.FromRoutes(Routes(
+            ["GET /api/teams/range", "30", "1", "30", "0", "120", "498", "1", "2026-10-20T09:00:00Z"]),
+            Component, 720, new AppSettings(new NoCredentials()), heldBack, Now);
+
+        Assert.Empty(findings);
+        IgnoredSubject held = Assert.Single(heldBack);
+        Assert.Equal("GET /api/teams/range", held.Subject);
+        Assert.Equal(FindingKind.FailureRate, held.Kind);
+        Assert.True(held.TooFewRecorded);
+        Assert.Equal("only 1 recorded, too few to judge", held.Pattern);
+    }
+
+    [Fact]
+    public void A_thinly_recorded_route_shown_on_request_is_judged_anyway()
+    {
+        AppSettings settings = new(new NoCredentials());
+        settings.AlwaysShownSubjects.Add("GET /api/teams/range");
+
+        ServiceFinding finding = Assert.Single(AppInsightsMonitor.FromRoutes(Routes(
+            ["GET /api/teams/range", "30", "1", "30", "0", "120", "498", "1", "2026-10-20T09:00:00Z"]),
+            Component, 720, settings, [], Now));
+
+        Assert.Equal("1 recorded · at least 1 user · last failed 3h ago", finding.Context);
+    }
+
+    [Fact]
+    public void A_route_that_is_neither_failing_nor_slow_is_not_held_back_for_being_quiet()
+    {
+        List<IgnoredSubject> heldBack = [];
+
+        AppInsightsMonitor.FromRoutes(Routes(
+            ["GET /api/teams/range", "30", "1", "0", "0", "120", "", "0", ""]),
+            Component, 720, new AppSettings(new NoCredentials()), heldBack, Now);
+
+        Assert.Empty(heldBack);
     }
 
     [Fact]
@@ -67,9 +108,8 @@ public sealed class AppInsightsMonitorTests
     [Fact]
     public void A_failing_dependency_is_one_finding_with_its_share_of_calls_and_every_code()
     {
-        List<ServiceFinding> findings = AppInsightsMonitor.FromDependencies(Dependencies(
-            ["Azure blob", "store.blob.core.windows.net", "1203", "240", "65", "12", "409, 412", "3", "2026-10-20T11:58:00Z"]),
-            Component, 720, Now);
+        List<ServiceFinding> findings = FromDependencies(Dependencies(
+            ["Azure blob", "store.blob.core.windows.net", "1203", "240", "65", "12", "409, 412", "3", "2026-10-20T11:58:00Z"]));
 
         ServiceFinding finding = Assert.Single(findings);
         Assert.Equal("Azure blob store.blob.core.windows.net", finding.Subject);
@@ -79,11 +119,17 @@ public sealed class AppInsightsMonitorTests
     }
 
     [Fact]
-    public void A_dependency_with_too_few_recorded_failures_is_not_raised()
+    public void A_dependency_with_too_few_recorded_failures_is_held_back_and_says_why()
     {
-        Assert.Empty(AppInsightsMonitor.FromDependencies(Dependencies(
-            ["HTTP", "registry.example.org", "300", "10", "58", "2", "400", "1", "2026-10-20T11:58:00Z"]),
-            Component, 720, Now));
+        List<IgnoredSubject> heldBack = [];
+
+        Assert.Empty(FromDependencies(Dependencies(
+            ["HTTP", "registry.example.org", "300", "10", "58", "2", "400", "1", "2026-10-20T11:58:00Z"]), heldBack));
+
+        IgnoredSubject held = Assert.Single(heldBack);
+        Assert.Equal("HTTP registry.example.org", held.Subject);
+        Assert.Equal(FindingKind.Dependency, held.Kind);
+        Assert.Equal("only 2 failures recorded, too few to judge", held.Pattern);
     }
 
     private static QueryTable Exceptions(params string[][] rows) =>
@@ -92,9 +138,8 @@ public sealed class AppInsightsMonitorTests
     [Fact]
     public void An_exception_thrown_outside_a_failed_request_is_a_finding_of_its_own()
     {
-        ServiceFinding finding = Assert.Single(AppInsightsMonitor.FromExceptions(Exceptions(
-            ["System.NullReferenceException at Jobs.Sync.Run", "1240", "45", "12", "1", "SyncJob", "2026-10-20T11:55:00Z"]),
-            Component, 720, Now));
+        ServiceFinding finding = Assert.Single(FromExceptions(Exceptions(
+            ["System.NullReferenceException at Jobs.Sync.Run", "1240", "45", "12", "1", "SyncJob", "2026-10-20T11:55:00Z"])));
 
         Assert.Equal(FindingKind.Exception, finding.Kind);
         Assert.Equal("System.NullReferenceException at Jobs.Sync.Run", finding.Subject);
@@ -105,19 +150,23 @@ public sealed class AppInsightsMonitorTests
     [Fact]
     public void An_exception_thrown_from_several_operations_says_how_many()
     {
-        ServiceFinding finding = Assert.Single(AppInsightsMonitor.FromExceptions(Exceptions(
-            ["System.TimeoutException at Data.Query", "30", "30", "0", "3", "GET Orders/Load", "2026-10-20T10:00:00Z"]),
-            Component, 720, Now));
+        ServiceFinding finding = Assert.Single(FromExceptions(Exceptions(
+            ["System.TimeoutException at Data.Query", "30", "30", "0", "3", "GET Orders/Load", "2026-10-20T10:00:00Z"])));
 
         Assert.Equal("30 thrown across 3 operations", finding.Detail);
         Assert.Equal("last thrown 2h ago", finding.Context);
     }
 
     [Fact]
-    public void An_exception_seen_in_too_few_recorded_items_is_not_raised()
+    public void An_exception_seen_in_too_few_recorded_items_is_held_back_and_says_why()
     {
-        Assert.Empty(AppInsightsMonitor.FromExceptions(Exceptions(
-            ["System.TimeoutException at Data.Query", "90", "3", "1", "1", "SyncJob", "2026-10-20T10:00:00Z"]),
-            Component, 720, Now));
+        List<IgnoredSubject> heldBack = [];
+
+        Assert.Empty(FromExceptions(Exceptions(
+            ["System.TimeoutException at Data.Query", "90", "3", "1", "1", "SyncJob", "2026-10-20T10:00:00Z"]), heldBack));
+
+        IgnoredSubject held = Assert.Single(heldBack);
+        Assert.Equal(FindingKind.Exception, held.Kind);
+        Assert.Equal("only 3 recorded, too few to judge", held.Pattern);
     }
 }

@@ -1,4 +1,5 @@
 v.1.7.1
+   - Fixed: a failure seen in too few recorded requests to judge was dropped without a trace, so a broken route of ours that is only lightly sampled could never appear. It is now listed under Settings, Held back, saying how little was recorded, and each section of the services pane ends with how many of its kind were held back this way. Always showing an entry overrides the threshold.
    - Fixed: opening a failing route in the portal showed no results whenever its failures threw nothing, which is every 404 and every handled error. It opened on the exceptions alone. It now opens on the failed requests themselves, with any exception and stack trace beside them, and each row says how many calls it stands for under sampling, so the rows add up to the count on the card. An agent asking why a route fails gets its failures the same way.
 
 v.1.7.0

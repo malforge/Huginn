@@ -2163,8 +2163,14 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             _lastSuppressed = suppressed;
             SuppressedCount = suppressed.Count;
 
+            foreach (ServiceSection section in ServiceSections)
+                section.TooFewCount = suppressed.Count(i => i.TooFewRecorded && i.Kind == section.Kind);
+
+            // Too thinly recorded to judge comes first: it is ours until shown otherwise, and the
+            // pane links here to it, so it must not sink below scanner traffic past the cut.
             Sync(SuppressedSubjects, suppressed
-                .OrderByDescending(i => i.Calls)
+                .OrderByDescending(i => i.TooFewRecorded)
+                .ThenByDescending(i => i.Calls)
                 .Take(50));
 
             SuppressedSummary = suppressed.Count == 0
