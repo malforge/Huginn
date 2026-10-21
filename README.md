@@ -37,8 +37,8 @@ Built on [Avalonia](https://avaloniaui.net/) and .NET 10.
   recorded rather than on counts scaled up by sampling, and each card says
   what it rests on: how much was recorded, the users seen failing, and when it
   last failed. Opening one lands in the portal on the query behind it: the
-  exceptions and their stack traces for a failing route, percentiles over the
-  window for a slow one.
+  failed requests of a failing route, with any exception and stack trace
+  beside them, and percentiles over the window for a slow one.
 - **Honest empty panes**: every pane says when it was last checked, and a
   pane whose source cannot answer says so instead of looking calm. An empty
   list from a broken source is the one thing a monitor must not get wrong.

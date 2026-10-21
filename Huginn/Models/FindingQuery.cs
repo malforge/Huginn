@@ -83,12 +83,21 @@ public static class FindingQuery
 
         return finding.Kind switch
         {
-            // The stack lives in exceptions. requests only says that something failed.
+            // The failed requests themselves, with whatever they threw beside them. Read from
+            // exceptions alone, a failure that threw nothing, such as a 404 or a handled error,
+            // opens on no results at all. leftouter keeps those. calls is how many requests
+            // each recorded one stands for under sampling, so the rows add up to the card.
             FindingKind.FailureRate => $"""
-                exceptions
-                | where timestamp > ago({window})
-                | where operation_Name == {subject}
-                | project timestamp, type, outerMessage, method, assembly, details
+                requests
+                | where timestamp > ago({window}) and success == false
+                | where name == {subject}
+                | project timestamp, resultCode, calls = itemCount, url, duration, operation_Id
+                | join kind=leftouter (
+                      exceptions
+                      | where timestamp > ago({window})
+                      | project operation_Id, type, outerMessage, method, details
+                  ) on operation_Id
+                | project timestamp, resultCode, calls, url, duration, type, outerMessage, method, details
                 | order by timestamp desc
                 """,
 
@@ -207,12 +216,17 @@ public static class FindingQuery
                     | order by calls desc
                     | take 10
                     """),
-                new Drilldown("Exceptions behind the failures", $"""
+                new Drilldown("The failures, and what they threw where they threw anything", $"""
                     requests
                     | where timestamp > ago({window}) and name == {subject} and success == false
-                    | join kind=inner (exceptions | where timestamp > ago({window})) on operation_Id
-                    | summarize occurrences = count() by type, outerMessage, method
-                    | order by occurrences desc
+                    | project operation_Id, resultCode, itemCount
+                    | join kind=leftouter (
+                          exceptions
+                          | where timestamp > ago({window})
+                          | project operation_Id, type, outerMessage, method
+                      ) on operation_Id
+                    | summarize failures = sum(itemCount) by resultCode, type, outerMessage, method
+                    | order by failures desc
                     | take 10
                     """),
             ],

@@ -1,3 +1,6 @@
+v.1.7.1
+   - Fixed: opening a failing route in the portal showed no results whenever its failures threw nothing, which is every 404 and every handled error. It opened on the exceptions alone. It now opens on the failed requests themselves, with any exception and stack trace beside them, and each row says how many calls it stands for under sampling, so the rows add up to the count on the card. An agent asking why a route fails gets its failures the same way.
+
 v.1.7.0
    - Fixed: crash counts covered only the last 24 hours, and an issue's first seen date was the start of those 24 hours, so a crash Sentry had seen since April read as new and as a fraction of its size. Every card now gives both reaches, everyone since Sentry first saw it and the last 14 days, e.g. "1,353 users since Apr 13 · 308 in 14d", matching what Sentry shows.
    - Fixed: an issue was called new whenever it was missing from the previous check, so a crash that went quiet for a day came back as new. New now means Sentry first saw it since Huginn last looked, and the label comes down once the issue is more than 14 days old.
