@@ -93,7 +93,21 @@ public sealed class SentryMonitor
 
             if (settings.MutedSentryIssues.TryGetValue(issue.Id, out var muted))
                 issue.MutedAtUserCount = muted.UserCount;
+
+            // A crash someone has taken leaves the lists of what to pick up, the way a mute does,
+            // and comes back the same way. Whoever has it, the user included.
+            issue.IsSetAside = issue.IsAssigned;
+
+            if (issue.IsSetAside && !settings.IsSentryIssueMuted(issue.Id)
+                && settings.RecordAssigned(issue.Id, issue.RecentUserCount, issue.RecentEventCount)
+                && lastChecked is not null)
+            {
+                escalations.Add(issue);
+            }
         }
+
+        if (isComplete)
+            settings.PruneAssigned([.. issues.Where(i => i.IsSetAside).Select(i => i.Id)]);
 
         HashSet<string> known = [.. settings.KnownSentryIssues];
         HashSet<string> knownRegressions = [.. settings.KnownSentryRegressions];

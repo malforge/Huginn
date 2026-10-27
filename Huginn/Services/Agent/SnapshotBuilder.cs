@@ -82,6 +82,9 @@ public static class SnapshotBuilder
                     Raised = c.IsFlagged,
                     RaisedReason = c.FlagReason,
                     Muted = c.IsMuted,
+                    AssignedTo = !c.IsAssigned ? ""
+                        : c.AssigneeIsTeam ? $"team {c.AssigneeName}" : c.AssigneeName,
+                    SetAside = c.IsSetAside,
                     Series = c.EventSeries,
                     SeriesBucketMinutes = c.SeriesBucketMinutes,
                     Trend = c.TrendVerdict,

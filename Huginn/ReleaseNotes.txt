@@ -1,3 +1,6 @@
+v.1.7.2
+   - A crash assigned to someone in Sentry, whoever it is, is set aside the way a muted one is: it leaves the top lists and waits with the muted ones, and comes back as an alert if it regresses or its reach over 14 days roughly doubles. Every card says who an issue is assigned to.
+
 v.1.7.1
    - New: each source's desktop notifications can be turned off under Settings, General, Notifications: pull requests, failed builds, crashes and service findings. Panes and the badge still show everything. All are on unless turned off.
    - The checkbox that read "Notify me when my builds fail" decided whether your own builds are watched at all, cards included. It now says so: "Watch builds I started".

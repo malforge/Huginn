@@ -1062,7 +1062,7 @@
                                           VerticalAlignment="Center"
                                           IsChecked="{Binding ShowMutedCrashes}"
                                           IsVisible="{Binding HasMutedCrashes}"
-                                          ToolTip.Tip="Show the ones you have muted">
+                                          ToolTip.Tip="Show the ones you have muted, and the ones someone has been assigned">
                                 <ToggleButton.Content>
                                     <StackPanel Orientation="Horizontal" Spacing="4">
                                         <TextBlock Text="🔇"/>

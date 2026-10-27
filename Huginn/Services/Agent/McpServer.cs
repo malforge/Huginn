@@ -152,7 +152,8 @@ public static class McpServer
                                           + "allTime: most people since Sentry first saw it."),
                 ["kind"] = Prop("string", "Filter: crash or report. Default both."),
                 ["onlyRaised"] = Prop("boolean", "Only issues Huginn raised as new, regressed or worse. Default false."),
-                ["includeMuted"] = Prop("boolean", "Include muted issues. Default false."),
+                ["includeMuted"] = Prop("boolean",
+                    "Include muted issues, and those set aside for being assigned to someone. Default false."),
                 ["limit"] = Prop("integer", "Maximum issues to return. Default 20."),
             }),
 
@@ -428,7 +429,8 @@ public static class McpServer
         // The same two lists the pane shows: what changed, then what is biggest right now.
         List<JsonNode?> top =
         [
-            .. crashes.Where(c => !Bool(c, "raised") && !Bool(c, "muted") && Str(c, "kind") == "crash")
+            .. crashes.Where(c => !Bool(c, "raised") && !Bool(c, "muted") && !Bool(c, "setAside")
+                                  && Str(c, "kind") == "crash")
                 .Take(5),
         ];
 
@@ -506,7 +508,7 @@ public static class McpServer
 
         IEnumerable<JsonNode?> crashes = Array(snapshot, "crashes")
             .Where(c => !onlyRaised || Bool(c, "raised"))
-            .Where(c => includeMuted || !Bool(c, "muted"))
+            .Where(c => includeMuted || (!Bool(c, "muted") && (!Bool(c, "setAside") || Bool(c, "raised"))))
             .Where(c => kind.Length == 0 || Str(c, "kind") == kind);
 
         // The snapshot is in fortnight order already. Ordering is stable, so all time keeps it

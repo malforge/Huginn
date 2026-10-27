@@ -50,6 +50,15 @@ public sealed class AgentCrash
 
     public bool Muted { get; set; }
 
+    /// <summary>Who it is assigned to: a person's name or "team ...". Empty when nobody.</summary>
+    public string AssignedTo { get; set; } = "";
+
+    /// <summary>
+    /// Assigned to someone, so left out of what to pick up, like a muted one. It is raised
+    /// again if it regresses or its recent reach doubles.
+    /// </summary>
+    public bool SetAside { get; set; }
+
     /// <summary>Event counts per bucket over the last 24 hours, oldest first.</summary>
     public IReadOnlyList<double> Series { get; set; } = [];
 

@@ -45,6 +45,8 @@
                     <TextBlock Text="{Binding TrendVerdict}" FontSize="11" Opacity="0.65"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
+                <TextBlock FontSize="11" Opacity="0.6" IsVisible="{Binding HasAssignedLine}"
+                           Text="{Binding AssignedLine}" TextTrimming="CharacterEllipsis"/>
                 <TextBlock FontSize="10" Opacity="0.5" IsVisible="{Binding IsMuted}"
                            TextTrimming="CharacterEllipsis">
                     <Run Text="muted at"/>

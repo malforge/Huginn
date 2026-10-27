@@ -93,6 +93,12 @@ public sealed partial class AppSettings
     public List<string> KnownSentryRegressions { get; set; } = [];
 
     /// <summary>
+    /// Issues assigned to someone else, with their recent reach when Huginn last measured them, so
+    /// one set aside that roughly doubles can come back. Persisted for the same reason as a mute.
+    /// </summary>
+    public Dictionary<string, SentryAcknowledgement> AssignedSentryIssues { get; set; } = [];
+
+    /// <summary>
     /// When Sentry was last read. An issue is new when Sentry first saw it after this, and null
     /// means no poll has completed, which is a baseline rather than a backlog to announce.
     /// </summary>
@@ -399,11 +405,50 @@ public sealed partial class AppSettings
         if (!MutedSentryIssues.TryGetValue(issueId, out SentryAcknowledgement? muted)) return false;
         if (isRegression) return true;
 
-        // Guard the zero case: something muted at no users escalates on its first user.
-        if (muted.UserCount == 0 && muted.EventCount == 0) return userCount > 0 || eventCount > 0;
+        return HasOutgrown(muted, userCount, eventCount);
+    }
 
-        return userCount >= muted.UserCount * EscalationFactor
-            || eventCount >= muted.EventCount * EscalationFactor;
+    /// <summary>Whether an issue has roughly doubled since it was measured.</summary>
+    private static bool HasOutgrown(SentryAcknowledgement at, int userCount, int eventCount)
+    {
+        // Guard the zero case: something measured at no users escalates on its first user.
+        if (at.UserCount == 0 && at.EventCount == 0) return userCount > 0 || eventCount > 0;
+
+        return userCount >= at.UserCount * EscalationFactor
+            || eventCount >= at.EventCount * EscalationFactor;
+    }
+
+    /// <summary>
+    /// Records an issue assigned to someone else at its current recent reach, and says whether it
+    /// has doubled since it was last recorded. The first sighting only records, so assigning an
+    /// issue never raises it.
+    /// </summary>
+    public bool RecordAssigned(string issueId, int userCount, int eventCount)
+    {
+        bool outgrown = AssignedSentryIssues.TryGetValue(issueId, out SentryAcknowledgement? at)
+                        && at.Window == SentryIssueItem.RecentWindow
+                        && HasOutgrown(at, userCount, eventCount);
+
+        if (at is null || outgrown || at.Window != SentryIssueItem.RecentWindow)
+        {
+            AssignedSentryIssues[issueId] = new SentryAcknowledgement
+            {
+                UserCount = userCount,
+                EventCount = eventCount,
+                Window = SentryIssueItem.RecentWindow,
+            };
+            Save();
+        }
+
+        return outgrown;
+    }
+
+    /// <summary>Forgets the issues no longer assigned to someone else.</summary>
+    public void PruneAssigned(HashSet<string> stillAssigned)
+    {
+        List<string> gone = [.. AssignedSentryIssues.Keys.Where(id => !stillAssigned.Contains(id))];
+        foreach (string id in gone) AssignedSentryIssues.Remove(id);
+        if (gone.Count > 0) Save();
     }
 
     public bool IsSentryIssueMuted(string issueId) => MutedSentryIssues.ContainsKey(issueId);
@@ -518,6 +563,7 @@ public sealed partial class AppSettings
             FlaggedSentryIssues = FlaggedSentryIssues,
             KnownSentryIssues = KnownSentryIssues,
             KnownSentryRegressions = KnownSentryRegressions,
+            AssignedSentryIssues = AssignedSentryIssues,
             SentryCheckedAt = SentryCheckedAt,
             MutedFindings = MutedFindings,
             FlaggedFindings = FlaggedFindings,
@@ -576,6 +622,7 @@ public sealed partial class AppSettings
                 FlaggedSentryIssues = dto.FlaggedSentryIssues ?? [],
                 KnownSentryIssues = dto.KnownSentryIssues ?? [],
                 KnownSentryRegressions = dto.KnownSentryRegressions ?? [],
+                AssignedSentryIssues = dto.AssignedSentryIssues ?? [],
                 SentryCheckedAt = dto.SentryCheckedAt,
                 MutedFindings = dto.MutedFindings ?? [],
                 FlaggedFindings = dto.FlaggedFindings ?? [],
@@ -629,6 +676,7 @@ public sealed partial class AppSettings
         public Dictionary<string, string>? FlaggedSentryIssues { get; set; }
         public List<string>? KnownSentryIssues { get; set; }
         public List<string>? KnownSentryRegressions { get; set; }
+        public Dictionary<string, SentryAcknowledgement>? AssignedSentryIssues { get; set; }
         public DateTimeOffset? SentryCheckedAt { get; set; }
         public Dictionary<string, double>? MutedFindings { get; set; }
         public Dictionary<string, string>? FlaggedFindings { get; set; }

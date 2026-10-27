@@ -23,8 +23,11 @@ public sealed class SentryMonitorTests
         DateTimeOffset? firstSeen = null,
         int users = 1353,
         int recentUsers = 40,
-        bool regressed = false) => new()
+        bool regressed = false,
+        string assignee = "") => new()
         {
+            AssigneeId = assignee,
+            AssigneeName = assignee.Length == 0 ? "" : $"Person {assignee}",
             Id = id,
             ShortId = $"MOBILE-APP-{id}",
             ProjectSlug = "mobile-app",
@@ -36,6 +39,61 @@ public sealed class SentryMonitorTests
             RecentEventCount = recentUsers * 2,
             IsRegression = regressed,
         };
+
+    [Fact]
+    public void A_crash_assigned_to_anyone_is_set_aside()
+    {
+        var snapshot = new SentryMonitor().Evaluate([Issue(assignee: "7")], Checked(), Now);
+
+        Assert.True(snapshot.Issues[0].IsSetAside);
+    }
+
+    [Fact]
+    public void An_unassigned_crash_is_not_set_aside()
+    {
+        var snapshot = new SentryMonitor().Evaluate([Issue()], Checked(), Now);
+
+        Assert.False(snapshot.Issues[0].IsSetAside);
+    }
+
+    [Fact]
+    public void A_set_aside_crash_whose_recent_reach_doubles_comes_back_as_worse_and_is_measured_again()
+    {
+        AppSettings settings = Checked();
+        new SentryMonitor().Evaluate([Issue(assignee: "7", recentUsers: 40)], settings, Now);
+
+        var grown = new SentryMonitor().Evaluate([Issue(assignee: "7", recentUsers: 80)], settings, Now);
+
+        Assert.Single(grown.Escalations);
+        Assert.Equal("worse", grown.Issues[0].FlagReason);
+        Assert.Equal(80, settings.AssignedSentryIssues["1"].UserCount);
+
+        var steady = new SentryMonitor().Evaluate([Issue(assignee: "7", recentUsers: 90)], settings, Now);
+        Assert.Empty(steady.Escalations);
+    }
+
+    [Fact]
+    public void A_set_aside_crash_below_double_raises_nothing()
+    {
+        AppSettings settings = Checked();
+        new SentryMonitor().Evaluate([Issue(assignee: "7", recentUsers: 40)], settings, Now);
+
+        var snapshot = new SentryMonitor().Evaluate([Issue(assignee: "7", recentUsers: 70)], settings, Now);
+
+        Assert.Empty(snapshot.Escalations);
+        Assert.False(snapshot.Issues[0].IsFlagged);
+    }
+
+    [Fact]
+    public void A_crash_that_is_no_longer_assigned_forgets_its_baseline()
+    {
+        AppSettings settings = Checked();
+        new SentryMonitor().Evaluate([Issue(assignee: "7")], settings, Now);
+
+        new SentryMonitor().Evaluate([Issue()], settings, Now);
+
+        Assert.False(settings.AssignedSentryIssues.ContainsKey("1"));
+    }
 
     [Fact]
     public void A_months_old_issue_that_was_missing_from_the_last_check_is_not_new()

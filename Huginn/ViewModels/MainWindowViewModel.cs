@@ -686,20 +686,24 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 _settings.GetSentryFlagReason(issue.Id));
         }
 
-        MutedCrashCount = _lastSentryIssues.Count(i => i.IsMuted);
+        // Set aside for being assigned waits with the muted ones, unless it has come back
+        // as an alert, which is shown with the alerts instead.
+        MutedCrashCount = _lastSentryIssues.Count(i => i.IsMuted || (i.IsSetAside && !i.IsFlagged));
         HasMutedCrashes = MutedCrashCount > 0;
         if (ShowMutedCrashes && MutedCrashCount == 0) ShowMutedCrashes = false;
 
         IEnumerable<SentryIssueItem> ranked = SentryMonitor.Ranked(_lastSentryIssues, RankCrashesByAllTime);
 
         Sync(CrashActions, ranked
-            .Where(i => ShowMutedCrashes ? i.IsMuted : i.IsFlagged && !i.IsMuted));
+            .Where(i => ShowMutedCrashes
+                ? i.IsMuted || (i.IsSetAside && !i.IsFlagged)
+                : i.IsFlagged && !i.IsMuted));
 
         // An alert is already on screen above, so the top lists hold the rest. Muted issues are
         // shown only where asked for.
         IEnumerable<SentryIssueItem> listed = ShowMutedCrashes
             ? []
-            : ranked.Where(i => !i.IsFlagged && !i.IsMuted);
+            : ranked.Where(i => !i.IsFlagged && !i.IsMuted && !i.IsSetAside);
 
         Sync(TopCrashes, listed.Where(i => i.IsCrash).Take(TopCrashCount));
         Sync(TopReports, listed.Where(i => !i.IsCrash).Take(TopReportCount));

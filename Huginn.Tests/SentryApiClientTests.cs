@@ -29,7 +29,8 @@ public sealed class SentryApiClientTests
             "firstSeen": "2026-04-14T07:12:00Z",
             "lastSeen": "2026-10-20T09:24:34Z"
           },
-          "stats": { "24h": [[1760950800, 3], [1760954400, 5]] }
+          "stats": { "24h": [[1760950800, 3], [1760954400, 5]] },
+          "assignedTo": { "type": "user", "id": "7", "name": "Kari Nordmann" }
         }]
         """;
 
@@ -72,6 +73,38 @@ public sealed class SentryApiClientTests
 
         Assert.Equal([3.0, 5.0], issue.EventSeries);
         Assert.Equal(60, issue.SeriesBucketMinutes);
+    }
+
+    [Fact]
+    public void Who_an_issue_is_assigned_to_is_read_from_the_list()
+    {
+        SentryIssueItem issue = Parse(Issue);
+
+        Assert.Equal("7", issue.AssigneeId);
+        Assert.Equal("Kari Nordmann", issue.AssigneeName);
+        Assert.False(issue.AssigneeIsTeam);
+    }
+
+    [Fact]
+    public void An_issue_assigned_to_a_team_says_so()
+    {
+        SentryIssueItem issue = Parse(Issue.Replace(
+            "\"type\": \"user\", \"id\": \"7\", \"name\": \"Kari Nordmann\"",
+            "\"type\": \"team\", \"id\": \"3\", \"name\": \"mobile\""));
+
+        Assert.True(issue.AssigneeIsTeam);
+        Assert.Equal("mobile", issue.AssigneeName);
+    }
+
+    [Fact]
+    public void An_unassigned_issue_has_no_assignee()
+    {
+        SentryIssueItem issue = Parse(Issue.Replace(
+            "\"assignedTo\": { \"type\": \"user\", \"id\": \"7\", \"name\": \"Kari Nordmann\" }",
+            "\"assignedTo\": null"));
+
+        Assert.Equal("", issue.AssigneeId);
+        Assert.Equal("", issue.AssignedLine);
     }
 
     [Fact]

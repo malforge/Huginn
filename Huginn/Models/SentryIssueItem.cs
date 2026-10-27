@@ -72,6 +72,36 @@ public sealed partial class SentryIssueItem : ObservableObject
     /// <summary>People reached within <see cref="RecentWindow"/>, which says whether it is still going.</summary>
     public int RecentUserCount { get; init; }
 
+    /// <summary>Sentry's id of whoever the issue is assigned to, a user or a team. Empty when nobody.</summary>
+    public string AssigneeId { get; init; } = "";
+
+    public string AssigneeName { get; init; } = "";
+
+    public bool AssigneeIsTeam { get; init; }
+
+    public bool IsAssigned => AssigneeId.Length > 0;
+
+    /// <summary>
+    /// Assigned to someone, whoever it is, so it leaves the lists of what to pick up and waits with
+    /// the muted ones, returning as an alert if it regresses or its recent reach doubles.
+    /// </summary>
+    public bool IsSetAside { get; set; }
+
+    /// <summary>Who has it, and for one set aside, what brings it back. Empty when unassigned.</summary>
+    public string AssignedLine
+    {
+        get
+        {
+            if (!IsAssigned) return "";
+            string who = AssigneeIsTeam ? $"team {AssigneeName}" : AssigneeName;
+            return IsSetAside
+                ? $"assigned to {who} · back if its {RecentWindow.TrimEnd('d')}-day reach doubles or it regresses"
+                : $"assigned to {who}";
+        }
+    }
+
+    public bool HasAssignedLine => AssignedLine.Length > 0;
+
     /// <summary>When Sentry first saw the issue, not when it first appeared in the window.</summary>
     public DateTimeOffset FirstSeen { get; init; }
 

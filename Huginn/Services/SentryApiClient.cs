@@ -182,11 +182,20 @@ public sealed class SentryApiClient : IDisposable
                 IsRegression = string.Equals(Text(issue, "substatus"), "regressed", StringComparison.OrdinalIgnoreCase),
                 EventSeries = Series(issue, SeriesPeriod, out int bucketMinutes),
                 SeriesBucketMinutes = bucketMinutes,
+                AssigneeId = Assignee(issue, "id"),
+                AssigneeName = Assignee(issue, "name"),
+                AssigneeIsTeam = Assignee(issue, "type") == "team",
             });
         }
 
         return issues;
     }
+
+    /// <summary>One field of assignedTo, which is null when nobody has the issue.</summary>
+    private static string Assignee(JsonElement issue, string property) =>
+        issue.TryGetProperty("assignedTo", out JsonElement to) && to.ValueKind == JsonValueKind.Object
+            ? Text(to, property)
+            : "";
 
     /// <summary>count comes back as a string, not a number.</summary>
     private static int Events(JsonElement counts) =>
