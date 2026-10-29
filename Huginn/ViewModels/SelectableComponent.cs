@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Huginn.ViewModels;
@@ -17,4 +20,16 @@ public partial class SelectableComponent : ObservableObject
     public string Qualifier { get; init; } = "";
 
     [ObservableProperty] private bool _isSelected;
+
+    /// <summary>
+    /// Cloud roles to judge, comma separated, for a resource several services share. Empty judges
+    /// the whole resource.
+    /// </summary>
+    [ObservableProperty] private string _roles = "";
+
+    public List<string> RoleList =>
+    [
+        .. Roles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase),
+    ];
 }

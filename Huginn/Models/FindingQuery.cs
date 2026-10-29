@@ -22,12 +22,13 @@ public static class FindingQuery
     {
         string window = Window(finding);
         string subject = Literal(finding.Subject);
+        string role = Role(finding);
 
         return finding.Kind switch
         {
             FindingKind.Dependency => $"""
                 dependencies
-                | where timestamp > ago({window})
+                | where timestamp > ago({window}){role}
                 | where strcat(type, " ", target) == {subject}
                 | summarize calls = sum(itemCount),
                             failures = sumif(itemCount, success == false)
@@ -37,18 +38,18 @@ public static class FindingQuery
 
             FindingKind.NoTraffic => $"""
                 requests
-                | where timestamp > ago({window})
+                | where timestamp > ago({window}){role}
                 | summarize calls = sum(itemCount) by bin(timestamp, 5m)
                 | order by timestamp asc
                 """,
 
             FindingKind.Exception => $"""
                 exceptions
-                | where timestamp > ago({window})
+                | where timestamp > ago({window}){role}
                 | where problemId == {subject}
                 | join kind=leftanti (
                       requests
-                      | where timestamp > ago({window}) and success == false
+                      | where timestamp > ago({window}) and success == false{role}
                       | project operation_Id
                   ) on operation_Id
                 | summarize thrown = sum(itemCount), recorded = count() by operation_Name
@@ -57,7 +58,7 @@ public static class FindingQuery
 
             _ => $"""
                 requests
-                | where timestamp > ago({window})
+                | where timestamp > ago({window}){role}
                 | where name == {subject}
                 | summarize calls = sum(itemCount),
                             failures = sumif(itemCount, success == false),
@@ -80,6 +81,7 @@ public static class FindingQuery
     {
         string window = Window(finding);
         string subject = Literal(finding.Subject);
+        string role = Role(finding);
 
         return finding.Kind switch
         {
@@ -89,12 +91,12 @@ public static class FindingQuery
             // each recorded one stands for under sampling, so the rows add up to the card.
             FindingKind.FailureRate => $"""
                 requests
-                | where timestamp > ago({window}) and success == false
+                | where timestamp > ago({window}) and success == false{role}
                 | where name == {subject}
                 | project timestamp, resultCode, calls = itemCount, url, duration, operation_Id
                 | join kind=leftouter (
                       exceptions
-                      | where timestamp > ago({window})
+                      | where timestamp > ago({window}){role}
                       | project operation_Id, type, outerMessage, method, details
                   ) on operation_Id
                 | project timestamp, resultCode, calls, url, duration, type, outerMessage, method, details
@@ -105,12 +107,12 @@ public static class FindingQuery
             // the operation they share. leftouter keeps the failures that raised nothing.
             FindingKind.Dependency => $"""
                 dependencies
-                | where timestamp > ago({window}) and success == false
+                | where timestamp > ago({window}) and success == false{role}
                 | where strcat(type, " ", target) == {subject}
                 | project operation_Id, timestamp, resultCode, operation_Name
                 | join kind=leftouter (
                       exceptions
-                      | where timestamp > ago({window})
+                      | where timestamp > ago({window}){role}
                       | project operation_Id, type, outerMessage, details
                   ) on operation_Id
                 | project timestamp, operation_Name, resultCode, type, outerMessage, details
@@ -119,7 +121,7 @@ public static class FindingQuery
 
             FindingKind.Latency => $"""
                 requests
-                | where timestamp > ago({window})
+                | where timestamp > ago({window}){role}
                 | where name == {subject}
                 | summarize calls = sum(itemCount),
                             p50 = round(percentile(duration, 50)),
@@ -131,7 +133,7 @@ public static class FindingQuery
 
             FindingKind.Exception => $"""
                 exceptions
-                | where timestamp > ago({window})
+                | where timestamp > ago({window}){role}
                 | where problemId == {subject}
                 | project timestamp, operation_Name, type, outerMessage, method, assembly, details
                 | order by timestamp desc
@@ -151,6 +153,7 @@ public static class FindingQuery
     {
         string window = Window(finding);
         string subject = Literal(finding.Subject);
+        string role = Role(finding);
 
         return finding.Kind switch
         {
@@ -158,7 +161,7 @@ public static class FindingQuery
             [
                 new Drilldown("How the latency moved through the window", $"""
                     requests
-                    | where timestamp > ago({window})
+                    | where timestamp > ago({window}){role}
                     | where name == {subject}
                     | summarize calls = sum(itemCount),
                                 p50 = round(percentile(duration, 50)),
@@ -173,7 +176,7 @@ public static class FindingQuery
             [
                 new Drilldown("Failures by result code, over time", $"""
                     dependencies
-                    | where timestamp > ago({window}) and success == false
+                    | where timestamp > ago({window}) and success == false{role}
                     | where strcat(type, " ", target) == {subject}
                     | summarize failures = sum(itemCount),
                                 slowest = round(max(duration))
@@ -186,7 +189,7 @@ public static class FindingQuery
             [
                 new Drilldown("Where it is thrown and what it says, over time", $"""
                     exceptions
-                    | where timestamp > ago({window})
+                    | where timestamp > ago({window}){role}
                     | where problemId == {subject}
                     | summarize occurrences = sum(itemCount)
                               by operation_Name, outerMessage, method, bin(timestamp, 1h)
@@ -197,9 +200,9 @@ public static class FindingQuery
 
             FindingKind.NoTraffic =>
             [
-                new Drilldown("Traffic over the last week", """
+                new Drilldown("Traffic over the last week", $"""
                     requests
-                    | where timestamp > ago(7d)
+                    | where timestamp > ago(7d){role}
                     | summarize calls = sum(itemCount) by bin(timestamp, 1h)
                     | order by timestamp asc
                     """),
@@ -211,18 +214,18 @@ public static class FindingQuery
             [
                 new Drilldown("Result codes", $"""
                     requests
-                    | where timestamp > ago({window}) and name == {subject}
+                    | where timestamp > ago({window}) and name == {subject}{role}
                     | summarize calls = sum(itemCount) by resultCode
                     | order by calls desc
                     | take 10
                     """),
                 new Drilldown("The failures, and what they threw where they threw anything", $"""
                     requests
-                    | where timestamp > ago({window}) and name == {subject} and success == false
+                    | where timestamp > ago({window}) and name == {subject} and success == false{role}
                     | project operation_Id, resultCode, itemCount
                     | join kind=leftouter (
                           exceptions
-                          | where timestamp > ago({window})
+                          | where timestamp > ago({window}){role}
                           | project operation_Id, type, outerMessage, method
                       ) on operation_Id
                     | summarize failures = sum(itemCount) by resultCode, type, outerMessage, method
@@ -232,6 +235,10 @@ public static class FindingQuery
             ],
         };
     }
+
+    /// <summary>The finding's role filter, set apart so it can close any line it is put on.</summary>
+    private static string Role(ServiceFinding finding) =>
+        finding.RoleClause.Length == 0 ? "" : " " + finding.RoleClause;
 
     private static string Window(ServiceFinding finding) =>
         $"{Math.Max(5, finding.WindowMinutes)}m";

@@ -50,6 +50,12 @@ public sealed partial class ServiceFinding : ObservableObject
     /// <summary>How much traffic this is about, for weighing what an ignore rule would hide.</summary>
     public long Calls { get; init; }
 
+    /// <summary>
+    /// The role filter of the resource it was found on, empty when every role counts, so the
+    /// queries that explain it look at the same service it was found in.
+    /// </summary>
+    public string RoleClause { get; init; } = "";
+
     /// <summary>The window the rule looked at, so the finding can reproduce itself.</summary>
     public int WindowMinutes { get; init; }
 

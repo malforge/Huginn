@@ -205,6 +205,7 @@ public sealed class PollingService : IDisposable
                     AppId = w.Key,
                     Name = AppSettings.NameOf(w.Value),
                     ResourceId = AppSettings.ResourceIdOf(w.Value),
+                    Roles = _settings.AppInsightsRoles.TryGetValue(w.Key, out List<string>? roles) ? roles : [],
                 })
                 .ToList();
 

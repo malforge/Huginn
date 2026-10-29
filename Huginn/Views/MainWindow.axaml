@@ -517,14 +517,22 @@
                                             <ItemsControl ItemsSource="{Binding FilteredComponents}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="vm:SelectableComponent">
-                                                        <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
-                                                            <StackPanel>
-                                                                <TextBlock Text="{Binding DisplayName}" FontSize="12"
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                                <TextBlock Text="{Binding Qualifier}" FontSize="10" Opacity="0.5"
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                            </StackPanel>
-                                                        </CheckBox>
+                                                        <StackPanel>
+                                                            <CheckBox IsChecked="{Binding IsSelected}" Margin="8,2" Padding="4,0">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="{Binding DisplayName}" FontSize="12"
+                                                                               TextTrimming="CharacterEllipsis"/>
+                                                                    <TextBlock Text="{Binding Qualifier}" FontSize="10" Opacity="0.5"
+                                                                               TextTrimming="CharacterEllipsis"/>
+                                                                </StackPanel>
+                                                            </CheckBox>
+                                                            <!-- Only for a watched resource: a shared one is narrowed to the
+                                                                 services that matter rather than judged whole. -->
+                                                            <TextBox IsVisible="{Binding IsSelected}" Margin="36,0,8,6" FontSize="11"
+                                                                     Text="{Binding Roles}"
+                                                                     PlaceholderText="Only these roles (cloud_RoleName, comma separated). Empty judges the whole resource."
+                                                                     ToolTip.Tip="For a resource several services report to, judge only these cloud roles"/>
+                                                        </StackPanel>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>

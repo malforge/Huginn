@@ -782,8 +782,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// <summary>Portal link for a watched resource, empty when its ARM id was never stored.</summary>
     private string PortalResourceUrl(string resourceName)
     {
+        // A resource watched for some roles only is named with them, after the resource itself.
+        string name = resourceName.Split(" › ")[0];
         var entry = _settings.WatchedAppInsights.Values
-            .FirstOrDefault(v => AppSettings.NameOf(v) == resourceName);
+            .FirstOrDefault(v => AppSettings.NameOf(v) == name);
 
         var id = entry is null ? "" : AppSettings.ResourceIdOf(entry);
         return id.Length == 0 ? "" : $"https://portal.azure.com/#resource{id}/overview";
@@ -1386,11 +1388,14 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                     ResourceId = c.ResourceId,
                     Qualifier = c.Qualifier,
                     IsSelected = selected.Contains(c.AppId),
+                    Roles = _settings.AppInsightsRoles.TryGetValue(c.AppId, out List<string>? roles)
+                        ? string.Join(", ", roles)
+                        : "",
                 };
 
                 component.PropertyChanged += (_, e) =>
                 {
-                    if (e.PropertyName == nameof(SelectableComponent.IsSelected))
+                    if (e.PropertyName is nameof(SelectableComponent.IsSelected) or nameof(SelectableComponent.Roles))
                         PersistWatchedComponents();
                 };
 
@@ -1420,6 +1425,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _settings.WatchedAppInsights = AvailableComponents
             .Where(c => c.IsSelected)
             .ToDictionary(c => c.AppId, c => c.ResourceId.Length > 0 ? c.ResourceId : c.DisplayName);
+
+        _settings.AppInsightsRoles = AvailableComponents
+            .Where(c => c.IsSelected && c.RoleList.Count > 0)
+            .ToDictionary(c => c.AppId, c => c.RoleList);
         _settings.Save();
         ReportAppInsightsState();
     }

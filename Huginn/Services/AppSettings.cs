@@ -99,6 +99,12 @@ public sealed partial class AppSettings
     public Dictionary<string, SentryAcknowledgement> AssignedSentryIssues { get; set; } = [];
 
     /// <summary>
+    /// Cloud roles to judge per watched resource, keyed by query app id, for a resource several
+    /// services share. A resource with no entry is judged whole.
+    /// </summary>
+    public Dictionary<string, List<string>> AppInsightsRoles { get; set; } = [];
+
+    /// <summary>
     /// When Sentry was last read. An issue is new when Sentry first saw it after this, and null
     /// means no poll has completed, which is a baseline rather than a backlog to announce.
     /// </summary>
@@ -564,6 +570,7 @@ public sealed partial class AppSettings
             KnownSentryIssues = KnownSentryIssues,
             KnownSentryRegressions = KnownSentryRegressions,
             AssignedSentryIssues = AssignedSentryIssues,
+            AppInsightsRoles = AppInsightsRoles,
             SentryCheckedAt = SentryCheckedAt,
             MutedFindings = MutedFindings,
             FlaggedFindings = FlaggedFindings,
@@ -623,6 +630,7 @@ public sealed partial class AppSettings
                 KnownSentryIssues = dto.KnownSentryIssues ?? [],
                 KnownSentryRegressions = dto.KnownSentryRegressions ?? [],
                 AssignedSentryIssues = dto.AssignedSentryIssues ?? [],
+                AppInsightsRoles = dto.AppInsightsRoles ?? [],
                 SentryCheckedAt = dto.SentryCheckedAt,
                 MutedFindings = dto.MutedFindings ?? [],
                 FlaggedFindings = dto.FlaggedFindings ?? [],
@@ -677,6 +685,7 @@ public sealed partial class AppSettings
         public List<string>? KnownSentryIssues { get; set; }
         public List<string>? KnownSentryRegressions { get; set; }
         public Dictionary<string, SentryAcknowledgement>? AssignedSentryIssues { get; set; }
+        public Dictionary<string, List<string>>? AppInsightsRoles { get; set; }
         public DateTimeOffset? SentryCheckedAt { get; set; }
         public Dictionary<string, double>? MutedFindings { get; set; }
         public Dictionary<string, string>? FlaggedFindings { get; set; }

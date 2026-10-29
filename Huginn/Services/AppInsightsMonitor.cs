@@ -107,9 +107,9 @@ public sealed class AppInsightsMonitor
             {
                 // One unreadable resource must not hide the others, but it must not hide itself
                 // either: it is reported back rather than only logged.
-                Log.Error($"Could not examine {component.Name}: {ex.GetType().Name}: {ex.Message}");
+                Log.Error($"Could not examine {component.DisplayName}: {ex.GetType().Name}: {ex.Message}");
                 Log.Error(ex.ToString());
-                unreadable.Add(new UnreadableResource(component.Name, Describe(ex), NeedsSignIn(ex)));
+                unreadable.Add(new UnreadableResource(component.DisplayName, Describe(ex), NeedsSignIn(ex)));
             }
         }
 
@@ -183,6 +183,7 @@ public sealed class AppInsightsMonitor
     {
         List<ServiceFinding> findings = [];
         string window = $"{windowMinutes}m";
+        string role = component.RoleClause.Length == 0 ? "" : " " + component.RoleClause;
 
         // 404s are counted like any other failure. They used to be excluded wholesale as probe
         // traffic, which hid a route of our own being called thousands of times an hour and
@@ -190,7 +191,7 @@ public sealed class AppInsightsMonitor
         // user can see and change.
         QueryTable routes = await client.QueryAsync(component.AppId, $"""
             requests
-            | where timestamp > ago({window})
+            | where timestamp > ago({window}){role}
             | summarize total = sum(itemCount),
                         failed = sumif(itemCount, success == false),
                         notFound = sumif(itemCount, toint(resultCode) == 404),
@@ -210,7 +211,7 @@ public sealed class AppInsightsMonitor
         // of calls and its sparkline all describe the same thing.
         QueryTable dependencies = await client.QueryAsync(component.AppId, $"""
             dependencies
-            | where timestamp > ago({window})
+            | where timestamp > ago({window}){role}
             | summarize calls = sum(itemCount),
                         failed = sumif(itemCount, success == false),
                         codes = strcat_array(make_set_if(resultCode, success == false and isnotempty(resultCode), {MaxCodesPerRoute}), ", "),
@@ -229,10 +230,10 @@ public sealed class AppInsightsMonitor
         // are counted here. problemId groups by type and throwing method, as the portal does.
         QueryTable exceptions = await client.QueryAsync(component.AppId, $"""
             exceptions
-            | where timestamp > ago({window})
+            | where timestamp > ago({window}){role}
             | join kind=leftanti (
                   requests
-                  | where timestamp > ago({window}) and success == false
+                  | where timestamp > ago({window}) and success == false{role}
                   | project operation_Id
               ) on operation_Id
             | summarize thrown = sum(itemCount),
@@ -253,25 +254,19 @@ public sealed class AppInsightsMonitor
         // whose traffic is spread thinly would read as dead.
         QueryTable traffic = await client.QueryAsync(component.AppId, $"""
             requests
-            | where timestamp > ago({window})
-            | summarize total = sum(itemCount)
+            | where timestamp > ago({window}){role}
+            | summarize total = sum(itemCount),
+                        lastHour = sumif(itemCount, timestamp > ago({SilenceMinutes}m)),
+                        lastSeen = max(timestamp)
             """, ct);
 
-        // Silence is the failure a threshold never catches, so it gets its own rule.
-        if (traffic.Rows.Count == 0 || Number(traffic.Rows[0], traffic.IndexOf("total")) == 0)
-        {
-            findings.Add(new ServiceFinding
-            {
-                Kind = FindingKind.NoTraffic,
-                ResourceName = component.Name,
-                AppId = component.AppId,
-                ResourceId = component.ResourceId,
-                Subject = component.Name,
-                Detail = $"no requests in the last {Describe(windowMinutes)}",
-                Magnitude = 1,
-                WindowMinutes = windowMinutes,
-            });
-        }
+        IReadOnlyList<string> row = traffic.Rows.Count == 0 ? [] : traffic.Rows[0];
+        ServiceFinding? silent = NoTrafficFinding(
+            component, windowMinutes,
+            Number(row, traffic.IndexOf("total")), Number(row, traffic.IndexOf("lastHour")),
+            Text(row, traffic.IndexOf("lastSeen")), now);
+
+        if (silent is not null) findings.Add(silent);
 
         return findings;
     }
@@ -321,7 +316,7 @@ public sealed class AppInsightsMonitor
             if (rate >= FailureRateThreshold && probeShaped)
             {
                 suppressed.Add(new IgnoredSubject(
-                    name, component.Name,
+                    name, component.DisplayName,
                     $"mostly 404 and under {MinimumCallsWhenMostly404} calls", total));
             }
             else if (rate >= FailureRateThreshold && thin)
@@ -334,9 +329,10 @@ public sealed class AppInsightsMonitor
                 findings.Add(new ServiceFinding
                 {
                     Kind = FindingKind.FailureRate,
-                    ResourceName = component.Name,
+                    ResourceName = component.DisplayName,
                     AppId = component.AppId,
                     ResourceId = component.ResourceId,
+                    RoleClause = component.RoleClause,
                     Subject = name,
                     Detail = $"{Share(rate)} of {Estimate(total, sampled)} calls failed{Codes(Text(row, codesAt))}",
                     Context = Evidence(
@@ -358,9 +354,10 @@ public sealed class AppInsightsMonitor
                 findings.Add(new ServiceFinding
                 {
                     Kind = FindingKind.Latency,
-                    ResourceName = component.Name,
+                    ResourceName = component.DisplayName,
                     AppId = component.AppId,
                     ResourceId = component.ResourceId,
+                    RoleClause = component.RoleClause,
                     Subject = name,
                     Detail = $"p95 {(p95 / 1000).ToString("N1", English)}s over {Estimate(total, sampled)} calls",
                     Context = sampled ? $"{Count(recorded)} recorded" : "",
@@ -417,9 +414,10 @@ public sealed class AppInsightsMonitor
             findings.Add(new ServiceFinding
             {
                 Kind = FindingKind.Dependency,
-                ResourceName = component.Name,
+                ResourceName = component.DisplayName,
                 AppId = component.AppId,
                 ResourceId = component.ResourceId,
+                RoleClause = component.RoleClause,
                 Subject = $"{Text(row, typeAt)} {target}".Trim(),
                 Detail = $"{Estimate(failed, failuresSampled)} of {Estimate(calls, callsSampled)} calls failed "
                          + $"({Share(share)}){Codes(Text(row, codesAt))}",
@@ -479,9 +477,10 @@ public sealed class AppInsightsMonitor
             findings.Add(new ServiceFinding
             {
                 Kind = FindingKind.Exception,
-                ResourceName = component.Name,
+                ResourceName = component.DisplayName,
                 AppId = component.AppId,
                 ResourceId = component.ResourceId,
+                RoleClause = component.RoleClause,
                 Subject = Text(row, problemAt),
                 Detail = $"{Estimate(thrown, sampled)} thrown{where}",
                 Context = Evidence(
@@ -497,10 +496,61 @@ public sealed class AppInsightsMonitor
         return findings;
     }
 
+    /// <summary>The recent stretch silence is judged on.</summary>
+    private const int SilenceMinutes = 60;
+
+    /// <summary>
+    /// Requests an hour a resource must average over the window before an empty last hour means
+    /// it has gone quiet rather than that it is a quiet resource.
+    /// </summary>
+    private const int BusyPerHour = 10;
+
+    /// <summary>
+    /// Silence is the failure a threshold never catches, so it gets its own rule. Judged on the
+    /// last hour as well as the whole window: a busy resource that stops partway through would
+    /// otherwise not be called silent until the window has passed, and on a week that is a week.
+    /// </summary>
+    public static ServiceFinding? NoTrafficFinding(
+        AppInsightsComponent component, int windowMinutes, long total, long lastHour, string lastSeen,
+        DateTimeOffset now)
+    {
+        string detail;
+
+        if (total == 0)
+        {
+            detail = $"no requests in the last {Describe(windowMinutes)}";
+        }
+        else
+        {
+            double perHour = total / (windowMinutes / 60.0);
+            if (windowMinutes <= SilenceMinutes || lastHour > 0 || perHour < BusyPerHour) return null;
+
+            string since = DateTimeOffset.TryParse(lastSeen, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal, out DateTimeOffset last)
+                ? Ago(now - last)
+                : $"{SilenceMinutes}m";
+
+            detail = $"no requests for {since}, after about {Count((long)Math.Round(perHour))} an hour";
+        }
+
+        return new ServiceFinding
+        {
+            Kind = FindingKind.NoTraffic,
+            ResourceName = component.DisplayName,
+            AppId = component.AppId,
+            ResourceId = component.ResourceId,
+            RoleClause = component.RoleClause,
+            Subject = component.DisplayName,
+            Detail = detail,
+            Magnitude = 1,
+            WindowMinutes = windowMinutes,
+        };
+    }
+
     /// <summary>Something held back for having too little recorded to judge, saying how little.</summary>
     private static IgnoredSubject TooFew(
         string subject, AppInsightsComponent component, FindingKind kind, string recorded, long calls) =>
-        new(subject, component.Name, $"only {recorded}, too few to judge", calls, kind, TooFewRecorded: true);
+        new(subject, component.DisplayName, $"only {recorded}, too few to judge", calls, kind, TooFewRecorded: true);
 
     /// <summary>Copy is en-US whatever the machine is set to, so a finding reads the same everywhere.</summary>
     private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-US");
@@ -533,6 +583,12 @@ public sealed class AppInsightsMonitor
     /// </summary>
     private static string LastFailed(string at, DateTimeOffset now) => Last("failed", at, now);
 
+    /// <summary>A span as the cards write it, e.g. "6d", "3h" or "5m".</summary>
+    private static string Ago(TimeSpan span) =>
+        span.TotalDays >= 1 ? $"{(int)span.TotalDays}d"
+        : span.TotalHours >= 1 ? $"{(int)span.TotalHours}h"
+        : $"{Math.Max(1, (int)span.TotalMinutes)}m";
+
     /// <summary>When something last happened, e.g. "last thrown 5m ago". Empty when unknown.</summary>
     private static string Last(string verb, string at, DateTimeOffset now)
     {
@@ -540,12 +596,7 @@ public sealed class AppInsightsMonitor
             return "";
 
         TimeSpan ago = now - when;
-        string phrase = ago.TotalDays >= 1 ? $"{(int)ago.TotalDays}d ago"
-            : ago.TotalHours >= 1 ? $"{(int)ago.TotalHours}h ago"
-            : ago.TotalMinutes >= 1 ? $"{(int)ago.TotalMinutes}m ago"
-            : "just now";
-
-        return $"last {verb} {phrase}";
+        return ago.TotalMinutes >= 1 ? $"last {verb} {Ago(ago)} ago" : $"last {verb} just now";
     }
 
     /// <summary>
@@ -576,6 +627,7 @@ public sealed class AppInsightsMonitor
 
         int bucket = BucketMinutes(windowMinutes);
         string window = $"{windowMinutes}m";
+        string role = component.RoleClause.Length == 0 ? "" : " " + component.RoleClause;
 
         Dictionary<string, List<double>> latency = [];
         Dictionary<string, List<double>> failureRate = [];
@@ -586,7 +638,7 @@ public sealed class AppInsightsMonitor
         {
             QueryTable series = await client.QueryAsync(component.AppId, $"""
                 requests
-                | where timestamp > ago({window})
+                | where timestamp > ago({window}){role}
                 | summarize p95 = round(percentile(duration, 95)),
                             failed = sumif(itemCount, success == false),
                             total = sum(itemCount)
@@ -613,10 +665,10 @@ public sealed class AppInsightsMonitor
         {
             QueryTable series = await client.QueryAsync(component.AppId, $"""
                 exceptions
-                | where timestamp > ago({window})
+                | where timestamp > ago({window}){role}
                 | join kind=leftanti (
                       requests
-                      | where timestamp > ago({window}) and success == false
+                      | where timestamp > ago({window}) and success == false{role}
                       | project operation_Id
                   ) on operation_Id
                 | summarize thrown = sum(itemCount) by problemId, bin(timestamp, {bucket}m)
@@ -634,7 +686,7 @@ public sealed class AppInsightsMonitor
         {
             QueryTable series = await client.QueryAsync(component.AppId, $"""
                 dependencies
-                | where timestamp > ago({window}) and success == false
+                | where timestamp > ago({window}) and success == false{role}
                 | summarize failed = sum(itemCount)
                           by subject = trim(" ", strcat(type, " ", target)), bin(timestamp, {bucket}m)
                 | order by timestamp asc
