@@ -85,6 +85,33 @@ public sealed class AppInsightsMonitorTests
         Assert.Empty(heldBack);
     }
 
+    private static QueryTable Scanned(params string[][] rows) =>
+        new(["name", "total", "recorded", "failed", "notFound", "unauthorized", "p95", "codes", "users", "lastFailed"], rows);
+
+    [Fact]
+    public void A_path_answering_mostly_401_to_a_few_calls_is_held_back_as_scanning()
+    {
+        List<IgnoredSubject> heldBack = [];
+
+        List<ServiceFinding> findings = AppInsightsMonitor.FromRoutes(Scanned(
+            ["POST /mcp/events", "97", "26", "97", "0", "97", "120", "401", "0", "2026-10-20T06:00:00Z"]),
+            Component, 720, new AppSettings(new NoCredentials()), heldBack, Now);
+
+        Assert.Empty(findings);
+        IgnoredSubject held = Assert.Single(heldBack);
+        Assert.Equal("mostly 404 or 401 and under 200 calls", held.Pattern);
+    }
+
+    [Fact]
+    public void A_busy_route_answering_401_is_still_a_finding()
+    {
+        ServiceFinding finding = Assert.Single(AppInsightsMonitor.FromRoutes(Scanned(
+            ["POST /api/session/updatepushtoken", "805", "47", "805", "0", "805", "120", "401", "0", "2026-10-20T10:00:00Z"]),
+            Component, 720, new AppSettings(new NoCredentials()), [], Now));
+
+        Assert.Equal(FindingKind.FailureRate, finding.Kind);
+    }
+
     [Fact]
     public void An_unsampled_route_gives_its_counts_as_exact()
     {

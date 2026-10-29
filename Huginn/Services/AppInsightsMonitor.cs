@@ -31,23 +31,24 @@ public sealed class AppInsightsMonitor
     private const int MinimumRecorded = 10;
 
     /// <summary>
-    /// Estimated calls a route answering mostly 404 needs before it becomes a finding, on top of
-    /// <see cref="MinimumRecorded"/>.
+    /// Estimated calls a route answering mostly 404 or 401 needs before it becomes a finding, on
+    /// top of <see cref="MinimumRecorded"/>.
     /// </summary>
     /// <remarks>
     /// An internet-facing resource is scanned continuously, and scanning is exactly the act of
     /// requesting paths that do not exist: one measured window held 2811 distinct 404 operations
-    /// averaging four calls each. Probing is unbounded and endlessly novel, so no list of it can
+    /// averaging four calls each. A host that authenticates before it routes answers the same
+    /// probes 401, so that counts the same way. Probing is unbounded and endlessly novel, so no list of it can
     /// be kept current, but it is uniformly quiet per path. A route of our own that is broken is
     /// the opposite shape: one path, called as often as the app calls it.
     ///
-    /// The cost is that a rarely-called route of ours answering 404 stays quiet. The settings
+    /// The cost is that a rarely-called route of ours answering 404 or 401 stays quiet. The settings
     /// view lists what this suppressed, so that is one glance away rather than invisible.
     /// </remarks>
-    private const int MinimumCallsWhenMostly404 = 200;
+    private const int MinimumCallsWhenScannerShaped = 200;
 
-    /// <summary>Share of a route's failures that must be 404 before it counts as probe-shaped.</summary>
-    private const double Mostly404 = 0.9;
+    /// <summary>Share of a route's failures that must be 404 or 401 before it counts as probe-shaped.</summary>
+    private const double ScannerShare = 0.9;
 
     /// <summary>Distinct failing result codes named on a card before it stops being readable.</summary>
     private const int MaxCodesPerRoute = 3;
@@ -195,6 +196,7 @@ public sealed class AppInsightsMonitor
             | summarize total = sum(itemCount),
                         failed = sumif(itemCount, success == false),
                         notFound = sumif(itemCount, toint(resultCode) == 404),
+                        unauthorized = sumif(itemCount, toint(resultCode) == 401),
                         p95 = round(percentile(duration, 95)),
                         codes = strcat_array(make_set_if(resultCode, success == false and isnotempty(resultCode), {MaxCodesPerRoute}), ", "),
                         lastFailed = maxif(timestamp, success == false),
@@ -281,6 +283,7 @@ public sealed class AppInsightsMonitor
         int p95At = routes.IndexOf("p95");
         int codesAt = routes.IndexOf("codes");
         int notFoundAt = routes.IndexOf("notFound");
+        int unauthorizedAt = routes.IndexOf("unauthorized");
         int lastFailedAt = routes.IndexOf("lastFailed");
         int recordedAt = routes.IndexOf("recorded");
         int usersAt = routes.IndexOf("users");
@@ -302,13 +305,13 @@ public sealed class AppInsightsMonitor
 
             bool sampled = recorded != total;
 
-            long notFound = Number(row, notFoundAt);
+            long refused = Number(row, notFoundAt) + Number(row, unauthorizedAt);
 
             // Scanner traffic is quiet per path and unbounded in variety, so it is held back by
             // volume rather than by a list of paths nobody could keep current.
             bool probeShaped = failed > 0
-                               && (double)notFound / failed >= Mostly404
-                               && total < MinimumCallsWhenMostly404
+                               && (double)refused / failed >= ScannerShare
+                               && total < MinimumCallsWhenScannerShaped
                                && !settings.IsAlwaysShown(name);
 
             double rate = total == 0 ? 0 : (double)failed / total;
@@ -317,7 +320,7 @@ public sealed class AppInsightsMonitor
             {
                 suppressed.Add(new IgnoredSubject(
                     name, component.DisplayName,
-                    $"mostly 404 and under {MinimumCallsWhenMostly404} calls", total));
+                    $"mostly 404 or 401 and under {MinimumCallsWhenScannerShaped} calls", total));
             }
             else if (rate >= FailureRateThreshold && thin)
             {

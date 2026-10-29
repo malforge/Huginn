@@ -1,3 +1,6 @@
+v.1.7.4
+   - Scanner traffic answered 401 is held back the way 404s are: a path whose failures are nearly all 404 or 401, with under 200 calls in the window, is listed under Settings, Held back rather than shown as a failing route. A host that authenticates before it routes answers probes 401. A busier route failing 401 is still reported.
+
 v.1.7.3
    - A watched Application Insights resource can be narrowed to some of its cloud roles, for a resource several services report to. Every rule, portal link and agent drill-down on it then looks at those roles alone, and its findings are named with them, e.g. "shared-insights › mobile-api". Set under Settings, Application Insights, beside the resource.
    - Fixed: a resource that went quiet partway through the window was not called silent until the whole window had passed, a week on the longest window. A resource that averaged at least 10 requests an hour and has had none for the last hour is now reported, saying for how long and what it used to see.
