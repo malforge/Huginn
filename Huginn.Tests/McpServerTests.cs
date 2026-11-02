@@ -116,6 +116,20 @@ public sealed class McpServerTests : IDisposable
     }
 
     [Fact]
+    public void A_route_is_found_by_any_spelling_of_it()
+    {
+        WriteSnapshot(Finding("POST /v2/Customers"));
+        using CancellationTokenSource stop = new(TimeSpan.FromSeconds(10));
+        Task app = AnswerQuestions(1, q => "answered " + q["subject"]!.GetValue<string>(), stop.Token);
+
+        string answer = Call("huginn_investigate",
+            new JsonObject { ["subject"] = "post /v2/customers/", ["waitSeconds"] = 5 });
+
+        Assert.Equal("answered POST /v2/Customers", answer);
+        app.Wait(stop.Token);
+    }
+
+    [Fact]
     public void Findings_a_subject_cannot_tell_apart_are_listed_by_their_own_subjects_and_details()
     {
         WriteSnapshot(Finding("POST /v2/Customers", "76% of ~80,000 calls failed"),
@@ -170,5 +184,18 @@ public sealed class McpServerTests : IDisposable
 
         Assert.Contains("probably not running", answer);
         Assert.Empty(Directory.EnumerateFiles(AppSettings.SettingsDir, InvestigationStore.RequestFilter));
+    }
+
+    [Fact]
+    public void A_wait_longer_than_a_client_allows_is_cut_to_what_it_allows()
+    {
+        WriteSnapshot(Finding("GET /v2/Orders/{id}"));
+        DateTime started = DateTime.UtcNow;
+
+        string answer = Call("huginn_investigate",
+            new JsonObject { ["subject"] = "GET /v2/Orders/{id}", ["waitSeconds"] = 180 });
+
+        Assert.Contains("within 50s", answer);
+        Assert.InRange((DateTime.UtcNow - started).TotalSeconds, 49, 58);
     }
 }

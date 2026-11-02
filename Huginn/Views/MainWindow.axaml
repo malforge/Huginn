@@ -666,6 +666,9 @@
                                     <TextBlock FontSize="12" Opacity="0.85" TextWrapping="Wrap"
                                                Text="{Binding AgentRegistrationStatus}"/>
 
+                                    <TextBlock Classes="pagenote"
+                                               Text="A Claude Code session started while Huginn is closed tries for a few seconds, then gives up and does not try again by itself. Start Huginn first, or run /mcp in that session once Huginn is up."/>
+
                                     <StackPanel Orientation="Horizontal" Spacing="6"
                                                 IsVisible="{Binding ClaudeCodeFound}">
                                         <Button IsEnabled="{Binding !AgentBusy}"

@@ -601,6 +601,15 @@ public sealed partial class AppSettings
         File.WriteAllText(SettingsPath, json);
     }
 
+    /// <summary>Saved findings rekeyed to the id each has now. Two that become one keep the first.</summary>
+    private static Dictionary<string, T> ByCurrentId<T>(Dictionary<string, T>? saved)
+    {
+        Dictionary<string, T> current = [];
+        foreach ((string id, T value) in saved ?? [])
+            current.TryAdd(ServiceFinding.CurrentId(id), value);
+        return current;
+    }
+
     public static AppSettings Load(ICredentialStore credentialStore)
     {
         if (!File.Exists(SettingsPath))
@@ -632,8 +641,8 @@ public sealed partial class AppSettings
                 AssignedSentryIssues = dto.AssignedSentryIssues ?? [],
                 AppInsightsRoles = dto.AppInsightsRoles ?? [],
                 SentryCheckedAt = dto.SentryCheckedAt,
-                MutedFindings = dto.MutedFindings ?? [],
-                FlaggedFindings = dto.FlaggedFindings ?? [],
+                MutedFindings = ByCurrentId(dto.MutedFindings),
+                FlaggedFindings = ByCurrentId(dto.FlaggedFindings),
                 AppInsightsPollIntervalMinutes =
                     dto.AppInsightsPollIntervalMinutes > 0 ? dto.AppInsightsPollIntervalMinutes : 15,
                 AppInsightsWindowMinutes =

@@ -152,6 +152,12 @@ registering. An update restarts Huginn, and Claude Code reconnects to it on its 
 made by an older Huginn, which has Claude Code start Huginn itself, is moved over to this address
 when Huginn starts.
 
+Claude Code connects when a session starts. If Huginn is not running yet, it retries for a few
+seconds and then gives up for that session, so start Huginn first, or run `/mcp` in the session
+once Huginn is up. A tool call that takes longer than Claude Code's 60 seconds is abandoned by the
+client, so `huginn_investigate` waits at most 50 seconds; a drill-down that runs longer carries on,
+and asking again within 10 minutes collects it.
+
 The same panel prints everything needed to set it up by hand, for a different agent or when the
 button will not do: the Claude Code one-liner, and for any other MCP client the command, the
 `--mcp` argument and the server as configuration, which is the shape nearly every MCP client takes.

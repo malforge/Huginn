@@ -2463,8 +2463,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         string resource = Ask(request, "resource");
         string kind = Ask(request, "kind");
 
+        // By id rather than by spelling: the snapshot the agent read may show a route in the
+        // spelling it had a poll ago.
         ServiceFinding? finding = _lastFindings.FirstOrDefault(f =>
-            string.Equals(f.Subject, subject, StringComparison.Ordinal)
+            f.Id == ServiceFinding.IdFor(f.AppId, f.Kind, subject)
             && (resource.Length == 0
                 || string.Equals(f.ResourceName, resource, StringComparison.OrdinalIgnoreCase))
             && (kind.Length == 0
@@ -2489,12 +2491,28 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        InvestigationStore.Answer(id,
-            await _investigations.AnswerAsync(finding.Id, () => InvestigateAsync(finding, signIn)));
+        string answer;
+        try
+        {
+            answer = await _investigations.AnswerAsync(finding.Id, () => InvestigateAsync(finding, signIn));
+        }
+        catch (InvestigationIncompleteException ex)
+        {
+            answer = ex.Report;
+        }
+        catch (Exception ex)
+        {
+            answer = $"Huginn could not run the queries: {ex.Message}";
+        }
+
+        InvestigationStore.Answer(id, answer);
         InvestigationStore.DiscardOlderThan(InvestigationsKeptFor);
     }
 
-    /// <summary>Runs the drill-down queries, and says why when they could not be run.</summary>
+    /// <summary>
+    /// Runs the drill-down queries. A failure is thrown rather than answered, so the next agent
+    /// to ask runs them again instead of being handed the failure.
+    /// </summary>
     private static async Task<string> InvestigateAsync(ServiceFinding finding, AzureSignIn signIn)
     {
         Stopwatch timer = Stopwatch.StartNew();
@@ -2517,7 +2535,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         {
             Log.Warn($"Investigation of {finding.Subject} failed after "
                      + $"{timer.Elapsed.TotalSeconds:N1}s: {ex.Message}");
-            return $"Huginn could not run the queries: {ex.Message}";
+            throw;
         }
     }
 

@@ -197,9 +197,9 @@ public static class McpServer
                     "FailureRate, Latency, Dependency, Exception or NoTraffic, to pick between findings "
                     + "that share a subject."),
                 ["waitSeconds"] = Prop("integer",
-                    $"How long to wait for Huginn. Default {DefaultInvestigateWait}. Queries that "
-                    + "take longer keep running, and calling again with the same subject "
-                    + "collects the answer."),
+                    $"How long to wait for Huginn. Default {DefaultInvestigateWait}, at most "
+                    + $"{MaxWait}. Queries that take longer keep running, and calling again with "
+                    + "the same subject collects the answer."),
             },
             new JsonArray("subject")),
 
@@ -211,7 +211,8 @@ public static class McpServer
             + "is always re-read; Sentry and Application Insights only if their interval elapsed.",
             new JsonObject
             {
-                ["waitSeconds"] = Prop("integer", "How long to wait for Huginn. Default 30."),
+                ["waitSeconds"] = Prop("integer",
+                    $"How long to wait for Huginn. Default 30, at most {MaxWait}."),
             }));
 
     private static JsonObject Tool(
@@ -267,7 +268,7 @@ public static class McpServer
     /// </summary>
     private static string Refresh(JsonObject args)
     {
-        int seconds = Count(args, "waitSeconds", 30);
+        int seconds = Wait(args, 30);
         string before = Str(ReadSnapshot(), "generatedAt");
 
         SnapshotStore.RequestRefresh();
@@ -307,7 +308,7 @@ public static class McpServer
         string subject = args["subject"]?.GetValue<string>() ?? "";
         string resource = args["resource"]?.GetValue<string>() ?? "";
         string kind = args["kind"]?.GetValue<string>() ?? "";
-        int seconds = Count(args, "waitSeconds", DefaultInvestigateWait);
+        int seconds = Wait(args, DefaultInvestigateWait);
 
         if (subject.Length == 0) return "Name a subject. " + Investigable(snapshot);
 
@@ -361,11 +362,17 @@ public static class McpServer
                + "there is nothing to read while it is closed.";
     }
 
-    /// <summary>
-    /// Under the minute a client commonly allows a tool call. A longer wait gains nothing when
-    /// the client gives up first, and an answer it misses is collected by asking again.
-    /// </summary>
     private const int DefaultInvestigateWait = 45;
+
+    /// <summary>
+    /// Under the minute Claude Code allows a call to an HTTP server. A longer wait is never
+    /// answered: the client has hung up by the time the reply is written.
+    /// </summary>
+    private const int MaxWait = 50;
+
+    /// <summary>How long a tool waits for the running Huginn, kept within what a client allows.</summary>
+    private static int Wait(JsonObject args, int fallback) =>
+        Math.Min(Count(args, "waitSeconds", fallback), MaxWait);
 
     /// <summary>
     /// The findings a question names. A subject spelled exactly as Huginn gave it is that
@@ -375,7 +382,7 @@ public static class McpServer
         JsonNode snapshot, string subject, string resource, string kind)
     {
         List<JsonNode?> named = [.. Array(snapshot, "services")
-            .Where(f => Same(Str(f, "subject"), subject))
+            .Where(f => Same(Str(f, "subject"), subject) || SameRoute(f, subject))
             .Where(f => resource.Length == 0 || Same(Str(f, "resource"), resource))
             .Where(f => kind.Length == 0 || Same(Str(f, "kind"), kind))];
 
@@ -399,6 +406,12 @@ public static class McpServer
 
     private static bool Same(string left, string right) =>
         string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A route finding named in any of its spellings, as Huginn matches it itself.</summary>
+    private static bool SameRoute(JsonNode? finding, string subject) =>
+        Enum.TryParse(Str(finding, "kind"), out Models.FindingKind kind)
+        && kind is Models.FindingKind.FailureRate or Models.FindingKind.Latency
+        && Models.RouteName.KeyOfTemplate(Str(finding, "subject")) == Models.RouteName.KeyOfTemplate(subject);
 
     private static JsonNode? ReadSnapshot()
     {

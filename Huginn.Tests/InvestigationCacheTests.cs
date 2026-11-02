@@ -58,4 +58,14 @@ public sealed class InvestigationCacheTests
 
         Assert.Equal("about b", await cache.AnswerAsync("b", () => Task.FromResult("about b")));
     }
+
+    [Fact]
+    public async Task Findings_differing_only_in_case_have_answers_of_their_own()
+    {
+        InvestigationCache cache = Cache();
+        await cache.AnswerAsync("app|Dependency|HTTP Foo.com", () => Task.FromResult("upper"));
+
+        Assert.Equal("lower",
+            await cache.AnswerAsync("app|Dependency|HTTP foo.com", () => Task.FromResult("lower")));
+    }
 }

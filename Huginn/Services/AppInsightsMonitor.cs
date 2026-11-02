@@ -193,7 +193,8 @@ public sealed class AppInsightsMonitor
         //
         // Grouped by route rather than by name, so a route recorded by its ids is one finding, and
         // a route called in two spellings is not two findings that cannot be told apart. It is
-        // shown in the spelling recorded most, which is the one a mute or an ignore rule named.
+        // shown in the spelling recorded most, and named by its key, so a mute holds whichever
+        // spelling that turns out to be.
         QueryTable routes = await client.QueryAsync(component.AppId, $"""
             let named = requests
                 | where timestamp > ago({window}){role}

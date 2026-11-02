@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -69,7 +70,28 @@ public sealed partial class ServiceFinding : ObservableObject
     /// Stable across polls so a finding can be muted or dismissed and still be recognised next
     /// time. Deliberately excludes the measurement, which moves every poll.
     /// </summary>
-    public string Id => $"{AppId}|{Kind}|{Subject}";
+    public string Id => IdFor(AppId, Kind, Subject);
+
+    /// <summary>
+    /// A route is named by its key rather than by the spelling shown, which is whichever its
+    /// requests were recorded under most and can change from one poll to the next.
+    /// </summary>
+    public static string IdFor(string appId, FindingKind kind, string subject) =>
+        kind is FindingKind.FailureRate or FindingKind.Latency
+            ? $"{appId}|{kind}|{RouteName.KeyOfTemplate(subject)}"
+            : $"{appId}|{kind}|{subject}";
+
+    /// <summary>
+    /// A saved id in the form <see cref="Id"/> takes now, so what was muted or raised under an
+    /// earlier form still applies. An id that does not parse is kept as it is.
+    /// </summary>
+    public static string CurrentId(string saved)
+    {
+        string[] parts = saved.Split('|', 3);
+        return parts.Length == 3 && Enum.TryParse(parts[1], out FindingKind kind)
+            ? IdFor(parts[0], kind, parts[2])
+            : saved;
+    }
 
     /// <summary>
     /// How loudly this kind of problem asks to be dealt with, highest first. Needed because

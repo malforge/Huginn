@@ -25,7 +25,11 @@ public static class Investigation
     /// <summary>Long enough for an exception message to be recognised, short enough to scan.</summary>
     private const int MaxCellLength = 160;
 
-    /// <summary>Runs every drill-down for the finding and returns them as one report.</summary>
+    /// <summary>
+    /// Runs every drill-down for the finding and returns them as one report. Throws
+    /// <see cref="InvestigationIncompleteException"/>, carrying the report, when any of them
+    /// could not be run.
+    /// </summary>
     public static async Task<string> RunAsync(
         ServiceFinding finding, AppInsightsApiClient client, CancellationToken ct)
     {
@@ -36,27 +40,28 @@ public static class Investigation
 
         // All at once, since each is a round trip of its own and the asker waits for the slowest.
         IReadOnlyList<Drilldown> drilldowns = FindingQuery.Explanations(finding);
-        string[] sections = await Task.WhenAll(drilldowns.Select(d => SectionAsync(d)));
+        (string Text, bool Ran)[] sections = await Task.WhenAll(drilldowns.Select(d => SectionAsync(d)));
 
-        foreach ((Drilldown drilldown, string section) in drilldowns.Zip(sections))
+        foreach ((Drilldown drilldown, (string text, _)) in drilldowns.Zip(sections))
         {
             report.AppendLine();
             report.AppendLine(drilldown.Title.ToUpperInvariant());
-            report.AppendLine(section);
+            report.AppendLine(text);
         }
 
-        return report.ToString().TrimEnd();
+        string answer = report.ToString().TrimEnd();
+        return sections.All(s => s.Ran) ? answer : throw new InvestigationIncompleteException(answer);
 
-        async Task<string> SectionAsync(Drilldown drilldown)
+        async Task<(string, bool)> SectionAsync(Drilldown drilldown)
         {
             try
             {
-                return Render(await client.QueryAsync(finding.AppId, drilldown.Kql, ct));
+                return (Render(await client.QueryAsync(finding.AppId, drilldown.Kql, ct)), true);
             }
             catch (Exception ex)
             {
                 // One query failing says nothing about the next, so carry on and report it.
-                return $"  Could not run this one: {ex.Message}";
+                return ($"  Could not run this one: {ex.Message}", false);
             }
         }
     }

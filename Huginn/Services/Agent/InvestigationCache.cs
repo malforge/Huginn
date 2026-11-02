@@ -15,7 +15,7 @@ namespace Huginn.Services.Agent;
 /// </remarks>
 public sealed class InvestigationCache(TimeSpan keepFor, Func<DateTimeOffset> now)
 {
-    private readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
 
     private readonly Lock _gate = new();
 
