@@ -22,6 +22,7 @@ public static class FindingQuery
     {
         string window = Window(finding);
         string subject = Literal(finding.Subject);
+        string route = Route(finding);
         string role = Role(finding);
 
         return finding.Kind switch
@@ -59,7 +60,7 @@ public static class FindingQuery
             _ => $"""
                 requests
                 | where timestamp > ago({window}){role}
-                | where name == {subject}
+                | where {route}
                 | summarize calls = sum(itemCount),
                             failures = sumif(itemCount, success == false),
                             p95 = round(percentile(duration, 95))
@@ -81,6 +82,7 @@ public static class FindingQuery
     {
         string window = Window(finding);
         string subject = Literal(finding.Subject);
+        string route = Route(finding);
         string role = Role(finding);
 
         return finding.Kind switch
@@ -92,12 +94,12 @@ public static class FindingQuery
             FindingKind.FailureRate => $"""
                 requests
                 | where timestamp > ago({window}) and success == false{role}
-                | where name == {subject}
+                | where {route}
                 | project timestamp, resultCode, calls = itemCount, url, duration, operation_Id
                 | join kind=leftouter (
                       exceptions
                       | where timestamp > ago({window}){role}
-                      | project operation_Id, type, outerMessage, method, details
+                      {OnePerOperation("type, outerMessage, method, details")}
                   ) on operation_Id
                 | project timestamp, resultCode, calls, url, duration, type, outerMessage, method, details
                 | order by timestamp desc
@@ -113,7 +115,7 @@ public static class FindingQuery
                 | join kind=leftouter (
                       exceptions
                       | where timestamp > ago({window}){role}
-                      | project operation_Id, type, outerMessage, details
+                      {OnePerOperation("type, outerMessage, details")}
                   ) on operation_Id
                 | project timestamp, operation_Name, resultCode, type, outerMessage, details
                 | order by timestamp desc
@@ -122,7 +124,7 @@ public static class FindingQuery
             FindingKind.Latency => $"""
                 requests
                 | where timestamp > ago({window}){role}
-                | where name == {subject}
+                | where {route}
                 | summarize calls = sum(itemCount),
                             p50 = round(percentile(duration, 50)),
                             p95 = round(percentile(duration, 95)),
@@ -153,6 +155,7 @@ public static class FindingQuery
     {
         string window = Window(finding);
         string subject = Literal(finding.Subject);
+        string route = Route(finding);
         string role = Role(finding);
 
         return finding.Kind switch
@@ -162,7 +165,7 @@ public static class FindingQuery
                 new Drilldown("How the latency moved through the window", $"""
                     requests
                     | where timestamp > ago({window}){role}
-                    | where name == {subject}
+                    | where {route}
                     | summarize calls = sum(itemCount),
                                 p50 = round(percentile(duration, 50)),
                                 p95 = round(percentile(duration, 95)),
@@ -214,19 +217,19 @@ public static class FindingQuery
             [
                 new Drilldown("Result codes", $"""
                     requests
-                    | where timestamp > ago({window}) and name == {subject}{role}
+                    | where timestamp > ago({window}) and {route}{role}
                     | summarize calls = sum(itemCount) by resultCode
                     | order by calls desc
                     | take 10
                     """),
                 new Drilldown("The failures, and what they threw where they threw anything", $"""
                     requests
-                    | where timestamp > ago({window}) and name == {subject} and success == false{role}
+                    | where timestamp > ago({window}) and {route} and success == false{role}
                     | project operation_Id, resultCode, itemCount
                     | join kind=leftouter (
                           exceptions
                           | where timestamp > ago({window}){role}
-                          | project operation_Id, type, outerMessage, method
+                          {OnePerOperation("type, outerMessage, method")}
                       ) on operation_Id
                     | summarize failures = sum(itemCount) by resultCode, type, outerMessage, method
                     | order by failures desc
@@ -244,9 +247,20 @@ public static class FindingQuery
         $"{Math.Max(5, finding.WindowMinutes)}m";
 
     /// <summary>
-    /// Wraps a value as a KQL string. Operation names come back from Azure rather than from us,
-    /// so they are not assumed to be free of quotes.
+    /// Selects the requests of the finding's route, whichever of its names they were recorded
+    /// under. Only a route's subject is a template; a dependency's is never filtered by this.
     /// </summary>
-    private static string Literal(string value) =>
-        "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+    private static string Route(ServiceFinding finding) =>
+        $"{RouteName.Key("name")} == {RouteName.KeyOf(finding.Subject)}";
+
+    /// <summary>
+    /// The last exception of each operation, so a join on the operation matches a request once.
+    /// An operation spans every service it passes through and can throw hundreds of times, and
+    /// joined whole, each failed request counts once for every one of them. An exception's
+    /// parent is the span that threw rather than the request, so it cannot narrow the match.
+    /// </summary>
+    private static string OnePerOperation(string columns) =>
+        $"| where isnotempty(operation_Id) | summarize arg_max(timestamp, {columns}) by operation_Id";
+
+    private static string Literal(string value) => RouteName.Literal(value);
 }

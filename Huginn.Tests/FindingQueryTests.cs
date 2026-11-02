@@ -19,7 +19,7 @@ public sealed class FindingQueryTests
         string query = FindingQuery.Portal(FailingRoute());
 
         Assert.StartsWith("requests", query.TrimStart());
-        Assert.Contains("name == \"GET /api/orders/load\"", query);
+        Assert.Contains($"{RouteName.Key("name")} == {RouteName.KeyOf("GET /api/orders/load")}", query);
         Assert.Contains("success == false", query);
         Assert.Contains("kind=leftouter", query);
     }
@@ -37,5 +37,27 @@ public sealed class FindingQueryTests
 
         Assert.Contains("kind=leftouter", query);
         Assert.DoesNotContain("kind=inner", query);
+    }
+
+    [Fact]
+    public void Each_failed_request_counts_once_however_many_times_its_operation_threw()
+    {
+        string query = FindingQuery.Explanations(FailingRoute()).Last().Kql;
+
+        Assert.Contains("summarize arg_max(timestamp, type, outerMessage, method) by operation_Id", query);
+    }
+
+    [Fact]
+    public void A_failing_route_is_explained_across_every_name_its_requests_were_recorded_under()
+    {
+        ServiceFinding finding = new()
+        {
+            Kind = FindingKind.FailureRate,
+            Subject = "GET /v2/Orders/{id}",
+            WindowMinutes = 720,
+        };
+
+        Assert.All(FindingQuery.Explanations(finding),
+            d => Assert.Contains($"{RouteName.Key("name")} == {RouteName.KeyOf(finding.Subject)}", d.Kql));
     }
 }

@@ -34,24 +34,31 @@ public static class Investigation
         report.AppendLine($"On {finding.ResourceName}, over the last {finding.WindowMinutes}m.");
         report.AppendLine(finding.Detail);
 
-        foreach (Drilldown drilldown in FindingQuery.Explanations(finding))
+        // All at once, since each is a round trip of its own and the asker waits for the slowest.
+        IReadOnlyList<Drilldown> drilldowns = FindingQuery.Explanations(finding);
+        string[] sections = await Task.WhenAll(drilldowns.Select(d => SectionAsync(d)));
+
+        foreach ((Drilldown drilldown, string section) in drilldowns.Zip(sections))
         {
             report.AppendLine();
             report.AppendLine(drilldown.Title.ToUpperInvariant());
+            report.AppendLine(section);
+        }
 
+        return report.ToString().TrimEnd();
+
+        async Task<string> SectionAsync(Drilldown drilldown)
+        {
             try
             {
-                QueryTable table = await client.QueryAsync(finding.AppId, drilldown.Kql, ct);
-                report.AppendLine(Render(table));
+                return Render(await client.QueryAsync(finding.AppId, drilldown.Kql, ct));
             }
             catch (Exception ex)
             {
                 // One query failing says nothing about the next, so carry on and report it.
-                report.AppendLine($"  Could not run this one: {ex.Message}");
+                return $"  Could not run this one: {ex.Message}";
             }
         }
-
-        return report.ToString().TrimEnd();
     }
 
     /// <summary>Lays a result table out in columns, so a row reads without counting commas.</summary>

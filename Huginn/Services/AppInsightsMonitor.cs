@@ -190,9 +190,19 @@ public sealed class AppInsightsMonitor
         // traffic, which hid a route of our own being called thousands of times an hour and
         // answering 404 every time. Probes are dealt with by the ignore list instead, which the
         // user can see and change.
+        //
+        // Grouped by route rather than by name, so a route recorded by its ids is one finding, and
+        // a route called in two spellings is not two findings that cannot be told apart. It is
+        // shown in the spelling recorded most, which is the one a mute or an ignore rule named.
         QueryTable routes = await client.QueryAsync(component.AppId, $"""
-            requests
-            | where timestamp > ago({window}){role}
+            let named = requests
+                | where timestamp > ago({window}){role}
+                | extend route = {RouteName.Template("name")}, key = {RouteName.Key("name")};
+            let spellings = named
+                | summarize calls = count() by key, route
+                | summarize arg_max(calls, route) by key
+                | project key, name = route;
+            named
             | summarize total = sum(itemCount),
                         failed = sumif(itemCount, success == false),
                         notFound = sumif(itemCount, toint(resultCode) == 404),
@@ -202,8 +212,10 @@ public sealed class AppInsightsMonitor
                         lastFailed = maxif(timestamp, success == false),
                         recorded = count(),
                         users = dcountif(user_AuthenticatedId, success == false and isnotempty(user_AuthenticatedId))
-                      by name
+                      by key
             | where recorded >= {MinimumRecorded} or failed > 0 or p95 >= {LatencyThresholdMs}
+            | join kind=inner spellings on key
+            | project-away key, key1
             """, ct);
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -645,7 +657,7 @@ public sealed class AppInsightsMonitor
                 | summarize p95 = round(percentile(duration, 95)),
                             failed = sumif(itemCount, success == false),
                             total = sum(itemCount)
-                          by name, bin(timestamp, {bucket}m)
+                          by name = {RouteName.Key("name")}, bin(timestamp, {bucket}m)
                 | order by timestamp asc
                 """, ct);
 
@@ -706,8 +718,8 @@ public sealed class AppInsightsMonitor
         {
             List<double>? points = finding.Kind switch
             {
-                FindingKind.Latency => Lookup(latency, finding.Subject),
-                FindingKind.FailureRate => Lookup(failureRate, finding.Subject),
+                FindingKind.Latency => Lookup(latency, RouteName.KeyOfTemplate(finding.Subject)),
+                FindingKind.FailureRate => Lookup(failureRate, RouteName.KeyOfTemplate(finding.Subject)),
                 FindingKind.Dependency => Lookup(dependency, finding.Subject),
                 FindingKind.Exception => Lookup(exception, finding.Subject),
                 _ => null,

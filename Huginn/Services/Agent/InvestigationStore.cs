@@ -8,24 +8,35 @@ namespace Huginn.Services.Agent;
 /// The channel an agent uses to ask a running Huginn to look closer at one finding.
 /// </summary>
 /// <remarks>
-/// Two files beside the snapshot, for the same reason it is a file: the stdio MCP process holds no
+/// Files beside the snapshot, for the same reason it is a file: the stdio MCP process holds no
 /// credentials and opens no port. It asks; the running Huginn, which is signed in, answers. The
-/// app's own HTTP endpoint goes through the same files, so both transports behave alike.
+/// app's own HTTP endpoint goes through the same files, so both transports behave alike. Each
+/// question has a pair of files of its own, named by its id, so agents asking at the same time
+/// neither overwrite each other's question nor collect each other's answer.
 /// </remarks>
 public static class InvestigationStore
 {
+    private const string Prefix = "investigate-";
+
+    private const string RequestExtension = ".request";
+
+    private const string ResponseExtension = ".response";
+
+    /// <summary>What the running Huginn watches for, as a file name pattern.</summary>
+    public const string RequestFilter = Prefix + "*" + RequestExtension;
+
     /// <summary>Written by the asker, watched by the running Huginn.</summary>
-    public static string RequestPath =>
-        Path.Combine(AppSettings.SettingsDir, "investigate.request");
+    public static string RequestPath(string id) =>
+        Path.Combine(AppSettings.SettingsDir, Prefix + id + RequestExtension);
 
     /// <summary>Written by the running Huginn, polled by the asker.</summary>
-    public static string ResponsePath =>
-        Path.Combine(AppSettings.SettingsDir, "investigate.response");
+    public static string ResponsePath(string id) =>
+        Path.Combine(AppSettings.SettingsDir, Prefix + id + ResponseExtension);
 
     /// <summary>Asks for a drill-down. Does nothing usable if Huginn is not running.</summary>
     public static void Ask(string id, string subject, string resource, string kind)
     {
-        Write(RequestPath, new JsonObject
+        Write(RequestPath(id), new JsonObject
         {
             ["id"] = id,
             ["subject"] = subject,
@@ -35,10 +46,10 @@ public static class InvestigationStore
         });
     }
 
-    /// <summary>Answers the request with that id, replacing any older answer.</summary>
+    /// <summary>Answers the request with that id.</summary>
     public static void Answer(string id, string text)
     {
-        Write(ResponsePath, new JsonObject
+        Write(ResponsePath(id), new JsonObject
         {
             ["id"] = id,
             ["text"] = text,
@@ -59,10 +70,31 @@ public static class InvestigationStore
         }
     }
 
-    /// <summary>Removes a file, ignoring a failure. A leftover is re-read on the next start.</summary>
+    /// <summary>Removes a file, ignoring a failure.</summary>
     public static void Discard(string path)
     {
         try { File.Delete(path); } catch { }
+    }
+
+    /// <summary>
+    /// Removes the questions and answers older than <paramref name="age"/>. An asker that gave up
+    /// waiting never collects its answer, and a question asked while Huginn was closed is
+    /// answered by nobody.
+    /// </summary>
+    public static void DiscardOlderThan(TimeSpan age)
+    {
+        try
+        {
+            DateTime cutoff = DateTime.UtcNow - age;
+            foreach (string path in Directory.EnumerateFiles(AppSettings.SettingsDir, Prefix + "*"))
+            {
+                if (File.GetLastWriteTimeUtc(path) < cutoff) Discard(path);
+            }
+        }
+        catch
+        {
+            // Tidying up is not worth failing a question over.
+        }
     }
 
     private static void Write(string path, JsonObject payload)
@@ -71,7 +103,8 @@ public static class InvestigationStore
         {
             Directory.CreateDirectory(AppSettings.SettingsDir);
 
-            // Through a temporary file, so the other side never reads a half-written one.
+            // Through a temporary file, so the other side never reads a half-written one. The
+            // temporary name must not match the request filter, or the watcher fires on it.
             string temp = path + ".tmp";
             File.WriteAllText(temp, payload.ToJsonString());
             File.Move(temp, path, overwrite: true);

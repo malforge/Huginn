@@ -160,12 +160,16 @@ public static class McpServer
         Tool("huginn_services",
             "Application Insights findings, most severe first. Counts marked ~ are estimates "
             + "scaled up from sampling; context says how many requests were actually recorded, "
-            + "the users seen failing and when it last failed. Returns JSON.",
+            + "the users seen failing and when it last failed. A route recorded by its ids is "
+            + "one finding, with each id shown as {id}. Returns JSON.",
             new JsonObject
             {
                 ["kind"] = Prop("string", "Filter: FailureRate, Latency, Dependency, Exception or NoTraffic."),
                 ["includeMuted"] = Prop("boolean", "Include muted findings. Default false."),
                 ["limit"] = Prop("integer", "Maximum findings to return. Default 20."),
+                ["full"] = Prop("boolean",
+                    "Include each finding's series and portalUrl, which are most of its size. "
+                    + "trend already says what the series shows. Default false."),
             }),
 
         Tool("huginn_pull_requests",
@@ -192,7 +196,10 @@ public static class McpServer
                 ["kind"] = Prop("string",
                     "FailureRate, Latency, Dependency, Exception or NoTraffic, to pick between findings "
                     + "that share a subject."),
-                ["waitSeconds"] = Prop("integer", "How long to wait for Huginn. Default 60."),
+                ["waitSeconds"] = Prop("integer",
+                    $"How long to wait for Huginn. Default {DefaultInvestigateWait}. Queries that "
+                    + "take longer keep running, and calling again with the same subject "
+                    + "collects the answer."),
             },
             new JsonArray("subject")),
 
@@ -300,14 +307,11 @@ public static class McpServer
         string subject = args["subject"]?.GetValue<string>() ?? "";
         string resource = args["resource"]?.GetValue<string>() ?? "";
         string kind = args["kind"]?.GetValue<string>() ?? "";
-        int seconds = Count(args, "waitSeconds", 60);
+        int seconds = Count(args, "waitSeconds", DefaultInvestigateWait);
 
         if (subject.Length == 0) return "Name a subject. " + Investigable(snapshot);
 
-        List<JsonNode?> matches = [.. Array(snapshot, "services")
-            .Where(f => Same(Str(f, "subject"), subject))
-            .Where(f => resource.Length == 0 || Same(Str(f, "resource"), resource))
-            .Where(f => kind.Length == 0 || Same(Str(f, "kind"), kind))];
+        List<JsonNode?> matches = Candidates(snapshot, subject, resource, kind);
 
         if (matches.Count == 0)
         {
@@ -316,17 +320,17 @@ public static class McpServer
 
         if (matches.Count > 1)
         {
-            return $"\"{subject}\" is a finding more than once. Say which, with resource or kind:"
-                   + Environment.NewLine
+            return $"\"{subject}\" is a finding more than once. Say which, with the subject exactly "
+                   + "as below, resource or kind:" + Environment.NewLine
                    + string.Join(Environment.NewLine, matches.Select(
-                       m => $"  {Str(m, "kind")} on {Str(m, "resource")}"));
+                       m => $"  {Str(m, "kind")} on {Str(m, "resource")}: {Str(m, "subject")}"
+                            + $" ({Str(m, "detail")}{(Bool(m, "muted") ? ", muted" : "")})"));
         }
 
         JsonNode? finding = matches[0];
         string id = Guid.NewGuid().ToString("N");
+        string answerPath = InvestigationStore.ResponsePath(id);
 
-        // An answer left over from a previous call would otherwise be read as this one's.
-        InvestigationStore.Discard(InvestigationStore.ResponsePath);
         InvestigationStore.Ask(id, Str(finding, "subject"), Str(finding, "resource"),
             Str(finding, "kind"));
 
@@ -335,16 +339,48 @@ public static class McpServer
         {
             Thread.Sleep(500);
 
-            JsonObject? answer = InvestigationStore.Read(InvestigationStore.ResponsePath);
+            JsonObject? answer = InvestigationStore.Read(answerPath);
             if (answer == null || Str(answer, "id") != id) continue;
 
-            InvestigationStore.Discard(InvestigationStore.ResponsePath);
+            InvestigationStore.Discard(answerPath);
             return Str(answer, "text");
         }
 
-        return $"Huginn did not answer within {seconds}s. It is probably not running: a query "
-               + "against Application Insights needs the signed-in Huginn, so there is nothing "
-               + "to read while it is closed.";
+        // A question Huginn took has left its file and is being answered. The answer is left
+        // for Huginn to tidy away once nobody can collect it.
+        if (!File.Exists(InvestigationStore.RequestPath(id)))
+        {
+            return $"Huginn is still running the queries for \"{Str(finding, "subject")}\" after "
+                   + $"{seconds}s. It carries on without you and keeps the answer for 10 minutes, "
+                   + "so call huginn_investigate again with the same subject to collect it.";
+        }
+
+        InvestigationStore.Discard(InvestigationStore.RequestPath(id));
+        return $"Huginn did not pick the question up within {seconds}s. It is probably not "
+               + "running: a query against Application Insights needs the signed-in Huginn, so "
+               + "there is nothing to read while it is closed.";
+    }
+
+    /// <summary>
+    /// Under the minute a client commonly allows a tool call. A longer wait gains nothing when
+    /// the client gives up first, and an answer it misses is collected by asking again.
+    /// </summary>
+    private const int DefaultInvestigateWait = 45;
+
+    /// <summary>
+    /// The findings a question names. A subject spelled exactly as Huginn gave it is that
+    /// finding, even beside another differing only in case.
+    /// </summary>
+    private static List<JsonNode?> Candidates(
+        JsonNode snapshot, string subject, string resource, string kind)
+    {
+        List<JsonNode?> named = [.. Array(snapshot, "services")
+            .Where(f => Same(Str(f, "subject"), subject))
+            .Where(f => resource.Length == 0 || Same(Str(f, "resource"), resource))
+            .Where(f => kind.Length == 0 || Same(Str(f, "kind"), kind))];
+
+        List<JsonNode?> exact = [.. named.Where(f => Str(f, "subject") == subject)];
+        return exact.Count > 0 ? exact : named;
     }
 
     /// <summary>Says what there is to investigate, for a subject that named nothing.</summary>
@@ -523,13 +559,25 @@ public static class McpServer
         string kind = args["kind"]?.GetValue<string>() ?? "";
         bool includeMuted = Flag(args, "includeMuted", false);
         int limit = Count(args, "limit", 20);
+        bool full = Flag(args, "full", false);
 
         return Dump([.. Array(snapshot, "services")
             .Where(f => kind.Length == 0
                         || string.Equals(Str(f, "kind"), kind, StringComparison.OrdinalIgnoreCase))
             .Where(f => includeMuted || !Bool(f, "muted"))
             .Take(limit)
-            .Select(f => f?.DeepClone())]);
+            .Select(f => full ? f?.DeepClone() : Without(f, "series", "portalUrl"))]);
+    }
+
+    /// <summary>A copy of the node with the named properties left out.</summary>
+    private static JsonNode? Without(JsonNode? node, params string[] names)
+    {
+        JsonNode? copy = node?.DeepClone();
+        if (copy is JsonObject properties)
+        {
+            foreach (string name in names) properties.Remove(name);
+        }
+        return copy;
     }
 
     private static string PullRequests(JsonNode snapshot, JsonObject args)

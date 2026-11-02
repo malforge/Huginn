@@ -23,6 +23,12 @@ public sealed class McpHttpHost : IDisposable
     /// <summary>Far above any real request, so a runaway client cannot make the app buffer without limit.</summary>
     private const int MaxBodyBytes = 1 << 20;
 
+    /// <summary>ERROR_CONNECTION_INVALID: the connection was closed from the other end.</summary>
+    private const int CallerGone = 1229;
+
+    /// <summary>ERROR_NETNAME_DELETED: the same, noticed in the middle of a write.</summary>
+    private const int NetworkNameGone = 64;
+
     private readonly HttpListener _listener = new();
     private readonly byte[] _expectedAuthorization;
     private readonly Func<string, string?> _respond;
@@ -124,6 +130,11 @@ public sealed class McpHttpHost : IDisposable
         catch (Exception) when (_stopping)
         {
             // Stopped while answering; the caller is gone with it.
+        }
+        catch (HttpListenerException ex) when (ex.ErrorCode is CallerGone or NetworkNameGone)
+        {
+            // The client stopped waiting, which a client may do whenever it likes.
+            Log.Warn("MCP over HTTP: the caller hung up before the answer was ready");
         }
         catch (Exception ex)
         {

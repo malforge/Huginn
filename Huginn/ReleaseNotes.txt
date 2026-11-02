@@ -1,3 +1,12 @@
+v.1.7.5
+   - A route recorded by its ids is one finding rather than one per id: guid and numeric segments read as {id}, e.g. "GET /v2/IncomingInvoices/{id}". The same route spelled in another case or with a trailing slash is folded in too, and shown in the spelling recorded most, so a mute on a route keeps applying.
+   - Fixed: an agent asking why a route fails was told of far more failures than the route had, e.g. 3,419,580 behind 9,460 failed calls. Each failed request was counted once for every exception its operation threw anywhere. It now counts once, with the last exception its operation threw.
+   - Fixed: agents asking Huginn about findings at the same time overwrote each other's questions and collected each other's answers, so most of them timed out. Each question now gets its own answer, and the queries behind it run at once rather than one after another.
+   - An agent's question that takes longer than its client waits keeps running, and asking again within 10 minutes collects the answer. Agents asking about the same finding share one run.
+   - Agents can pick one finding from several whose names differ only in case, and are shown each one's name and size when they have to choose.
+   - Service findings for agents leave out the series and portal link unless asked, which are most of their size. The trend still says what the series shows.
+   - Fixed: starting any copy of Huginn, a test build included, made that copy the one that starts at sign-in. Only turning the setting on changes which copy that is.
+
 v.1.7.4
    - Scanner traffic answered 401 is held back the way 404s are: a path whose failures are nearly all 404 or 401, with under 200 calls in the window, is listed under Settings, Held back rather than shown as a failing route. A host that authenticates before it routes answers probes 401. A busier route failing 401 is still reported.
 
