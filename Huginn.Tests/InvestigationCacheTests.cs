@@ -41,13 +41,34 @@ public sealed class InvestigationCacheTests
     }
 
     [Fact]
-    public async Task A_run_that_failed_is_tried_again_rather_than_handed_out()
+    public async Task A_run_that_failed_is_tried_again_once_its_failure_has_had_time_to_be_collected()
     {
         InvestigationCache cache = Cache();
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => cache.AnswerAsync("a", () => Task.FromException<string>(new InvalidOperationException())));
 
+        _now = _now.AddMinutes(2);
         Assert.Equal("worked", await cache.AnswerAsync("a", () => Task.FromResult("worked")));
+    }
+
+    [Fact]
+    public async Task An_agent_that_stopped_waiting_collects_the_failure_rather_than_starting_the_run_over()
+    {
+        InvestigationCache cache = Cache();
+        TaskCompletionSource<string> running = new();
+        _ = cache.AnswerAsync("a", () => running.Task);
+
+        // The asker gave up before the run failed, and asks again just after.
+        _now = _now.AddSeconds(60);
+        running.SetException(new InvalidOperationException("one query timed out"));
+        _now = _now.AddSeconds(10);
+        int runs = 0;
+
+        InvalidOperationException failed = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => cache.AnswerAsync("a", () => { runs++; return Task.FromResult("fresh"); }));
+
+        Assert.Equal("one query timed out", failed.Message);
+        Assert.Equal(0, runs);
     }
 
     [Fact]

@@ -352,8 +352,9 @@ public static class McpServer
         if (!File.Exists(InvestigationStore.RequestPath(id)))
         {
             return $"Huginn is still running the queries for \"{Str(finding, "subject")}\" after "
-                   + $"{seconds}s. It carries on without you and keeps the answer for 10 minutes, "
-                   + "so call huginn_investigate again with the same subject to collect it.";
+                   + $"{seconds}s. It carries on without you, so call huginn_investigate again "
+                   + "with the same subject to collect the answer. An answer is kept for 10 "
+                   + "minutes, and a failure for 2, after which asking runs the queries again.";
         }
 
         InvestigationStore.Discard(InvestigationStore.RequestPath(id));

@@ -9,10 +9,20 @@ namespace Huginn.Models;
 public static class Glob
 {
     /// <summary>
-    /// Whether <paramref name="text"/> matches <paramref name="pattern"/>, case-insensitively.
-    /// <c>*</c> stands for any run of characters, including none. <c>?</c> stands for one.
+    /// Whether <paramref name="text"/> matches <paramref name="pattern"/>, case-insensitively and
+    /// whether or not either ends in a slash. <c>*</c> stands for any run of characters,
+    /// including none. <c>?</c> stands for one.
     /// </summary>
-    public static bool Matches(string pattern, string text)
+    /// <remarks>
+    /// A route is shown in whichever of its spellings was recorded most, which can gain or lose a
+    /// trailing slash from one poll to the next, so a rule naming it must not depend on one.
+    /// </remarks>
+    public static bool Matches(string pattern, string text) =>
+        MatchesAsWritten(pattern, text)
+        || ((pattern.EndsWith('/') || text.EndsWith('/'))
+            && MatchesAsWritten(pattern.TrimEnd('/'), text.TrimEnd('/')));
+
+    private static bool MatchesAsWritten(string pattern, string text)
     {
         if (pattern.Length == 0) return false;
 

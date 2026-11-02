@@ -24,8 +24,15 @@ public sealed class InvestigationCache(TimeSpan keepFor, Func<DateTimeOffset> no
     }
 
     /// <summary>
+    /// How long a run that failed is handed out after it failed. Long enough for an asker that
+    /// stopped waiting to ask again and collect it, short enough that the next question after
+    /// that runs the queries afresh.
+    /// </summary>
+    public static readonly TimeSpan FailuresKeptFor = TimeSpan.FromMinutes(2);
+
+    /// <summary>
     /// The answer for <paramref name="key"/>: the one running or kept, or a new run of
-    /// <paramref name="run"/>. A run that failed is not kept, so the next ask tries again.
+    /// <paramref name="run"/>.
     /// </summary>
     public Task<string> AnswerAsync(string key, Func<Task<string>> run)
     {
@@ -33,23 +40,33 @@ public sealed class InvestigationCache(TimeSpan keepFor, Func<DateTimeOffset> no
         {
             DateTimeOffset at = now();
 
-            if (_entries.TryGetValue(key, out Entry? entry)
-                && (!entry.Answer.IsCompleted || at - entry.Started < keepFor)
-                && !entry.Answer.IsFaulted && !entry.Answer.IsCanceled)
-            {
+            if (_entries.TryGetValue(key, out Entry? entry) && entry.IsKept(at, keepFor))
                 return entry.Answer;
-            }
 
             foreach ((string old, Entry kept) in _entries)
             {
-                if (kept.Answer.IsCompleted && at - kept.Started >= keepFor) _entries.Remove(old);
+                if (!kept.IsKept(at, keepFor)) _entries.Remove(old);
             }
 
-            Task<string> answer = run();
-            _entries[key] = new Entry(answer, at);
-            return answer;
+            Entry started = new(run(), at);
+            started.Answer.ContinueWith(
+                _ => { lock (_gate) started.Finished = now(); },
+                TaskContinuationOptions.ExecuteSynchronously);
+
+            _entries[key] = started;
+            return started.Answer;
         }
     }
 
-    private sealed record Entry(Task<string> Answer, DateTimeOffset Started);
+    private sealed class Entry(Task<string> answer, DateTimeOffset started)
+    {
+        public Task<string> Answer { get; } = answer;
+
+        public DateTimeOffset Finished { get; set; } = DateTimeOffset.MaxValue;
+
+        /// <summary>Running, answered within the window, or failed too recently to run again.</summary>
+        public bool IsKept(DateTimeOffset at, TimeSpan keepFor) =>
+            !Answer.IsCompleted
+            || (Answer.IsCompletedSuccessfully ? at - started < keepFor : at - Finished < FailuresKeptFor);
+    }
 }
