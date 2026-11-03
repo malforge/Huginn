@@ -17,10 +17,16 @@ public static class Glob
     /// A route is shown in whichever of its spellings was recorded most, which can gain or lose a
     /// trailing slash from one poll to the next, so a rule naming it must not depend on one.
     /// </remarks>
-    public static bool Matches(string pattern, string text) =>
-        MatchesAsWritten(pattern, text)
-        || ((pattern.EndsWith('/') || text.EndsWith('/'))
-            && MatchesAsWritten(pattern.TrimEnd('/'), text.TrimEnd('/')));
+    public static bool Matches(string pattern, string text)
+    {
+        string bare = text.TrimEnd('/');
+
+        // The text is tried in both spellings, and the pattern without its slash, so neither a
+        // pattern ending "/*" nor one ending "/" depends on which spelling is shown.
+        return MatchesAsWritten(pattern, bare)
+               || MatchesAsWritten(pattern, bare + "/")
+               || MatchesAsWritten(pattern.TrimEnd('/'), bare);
+    }
 
     private static bool MatchesAsWritten(string pattern, string text)
     {

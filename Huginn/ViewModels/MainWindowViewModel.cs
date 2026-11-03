@@ -2510,8 +2510,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Runs the drill-down queries. A failure is thrown rather than answered, so the next agent
-    /// to ask runs them again instead of being handed the failure.
+    /// Runs the drill-down queries. A failure is thrown rather than answered, so the cache keeps
+    /// it only briefly, for an agent that stopped waiting to collect, and then runs them again.
     /// </summary>
     private static async Task<string> InvestigateAsync(ServiceFinding finding, AzureSignIn signIn)
     {
