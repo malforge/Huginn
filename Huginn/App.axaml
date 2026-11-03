@@ -6,12 +6,31 @@
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
+    <Application.Resources>
+        <!-- Drawn rather than taken from a font, which on some systems has no such arrows and
+             falls back to one that renders them tiny. 12 by 12, stroked. -->
+        <StreamGeometry x:Key="FocusPaneIcon">M1,5 L1,1 L5,1 M1,1 L5,5 M11,7 L11,11 L7,11 M11,11 L7,7</StreamGeometry>
+        <StreamGeometry x:Key="RestorePanesIcon">M5,1 L5,5 L1,5 M5,5 L1,1 M7,11 L7,7 L11,7 M7,7 L11,11</StreamGeometry>
+    </Application.Resources>
+
     <Application.DataTemplates>
         <local:ViewLocator/>
     </Application.DataTemplates>
   
     <Application.Styles>
         <FluentTheme />
+        <Style Selector="Path.pane-icon">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="StrokeThickness" Value="1.5"/>
+            <Setter Property="StrokeLineCap" Value="Round"/>
+            <Setter Property="Stroke" Value="{Binding $parent[Button].Foreground}"/>
+        </Style>
+        <!-- The button's own Foreground does not change when it is disabled; the theme changes
+             its presenter's instead, which a drawn icon does not follow. -->
+        <Style Selector="Button:disabled Path.pane-icon">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
         <Style Selector="Button.card-action">
             <Setter Property="MinHeight" Value="32"/>
             <Setter Property="MinWidth" Value="36"/>

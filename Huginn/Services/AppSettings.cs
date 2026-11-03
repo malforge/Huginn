@@ -242,6 +242,9 @@ public sealed partial class AppSettings
     /// <inheritdoc cref="AdoEnabled"/>
     public bool AppInsightsEnabled { get; set; } = true;
 
+    /// <summary>The pane given most of the window, or none when they share it evenly.</summary>
+    public PaneKind FocusedPane { get; set; }
+
     /// <summary>
     /// Whether each source may interrupt with a desktop notification. Only the interruption: the
     /// panes and the badge show everything either way. On unless turned off, so settings saved
@@ -613,6 +616,7 @@ public sealed partial class AppSettings
             AdoEnabled = AdoEnabled,
             SentryEnabled = SentryEnabled,
             AppInsightsEnabled = AppInsightsEnabled,
+            FocusedPane = FocusedPane == PaneKind.None ? null : FocusedPane.ToString(),
             AgentToken = AgentToken,
         }, SettingsJsonContext.Default.SettingsDto);
         File.WriteAllText(SettingsPath, json);
@@ -687,6 +691,10 @@ public sealed partial class AppSettings
                 AdoEnabled = dto.AdoEnabled,
                 SentryEnabled = dto.SentryEnabled,
                 AppInsightsEnabled = dto.AppInsightsEnabled,
+                // By exact name only: TryParse alone also takes "2", or "AzureDevOps,Sentry" as flags.
+                FocusedPane = Enum.TryParse(dto.FocusedPane, out PaneKind pane) && Enum.GetName(pane) == dto.FocusedPane
+                    ? pane
+                    : PaneKind.None,
                 AgentToken = dto.AgentToken ?? "",
             };
         }
@@ -743,6 +751,7 @@ public sealed partial class AppSettings
         public bool AdoEnabled { get; set; } = true;
         public bool SentryEnabled { get; set; } = true;
         public bool AppInsightsEnabled { get; set; } = true;
+        public string? FocusedPane { get; set; }
         public string? AgentToken { get; set; }
     }
 

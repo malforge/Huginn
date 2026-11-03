@@ -43,6 +43,26 @@ public sealed class SourceSwitchTests
         Assert.True(loaded.AppInsightsEnabled);
     }
 
+    [Fact]
+    public void The_focused_pane_survives_a_restart()
+    {
+        new AppSettings(new NoCredentials()) { FocusedPane = PaneKind.Sentry }.Save();
+
+        Assert.Equal(PaneKind.Sentry, AppSettings.Load(new NoCredentials()).FocusedPane);
+    }
+
+    [Theory]
+    [InlineData("99")]
+    [InlineData("Nonsense")]
+    [InlineData("AzureDevOps,Sentry")]
+    public void A_focused_pane_Huginn_does_not_know_loads_as_none(string stored)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+        File.WriteAllText(SettingsPath, $$"""{ "FocusedPane": "{{stored}}" }""");
+
+        Assert.Equal(PaneKind.None, AppSettings.Load(new NoCredentials()).FocusedPane);
+    }
+
     [Theory]
     [InlineData(ConnectionState.NotConfigured)]
     [InlineData(ConnectionState.AuthFailed)]

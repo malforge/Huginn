@@ -179,30 +179,39 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _isSettingsVisible;
 
     /// <summary>
-    /// How many pane columns the window is wide enough for. Driven by the window rather than
-    /// fixed, so the same layout works maximised and at the minimum width.
+    /// The pane given most of the window, the rest shrunk to slivers, or none when they share it
+    /// evenly. Kept across restarts, like the window's own size.
     /// </summary>
-    [ObservableProperty] private int _layoutColumns = 1;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAdoFocused))]
+    [NotifyPropertyChangedFor(nameof(IsSentryFocused))]
+    [NotifyPropertyChangedFor(nameof(IsServicesFocused))]
+    private PaneKind _focusedPane;
 
-    /// <summary>How many panes side by side the window has room for.</summary>
-    private int _fittingColumns = 1;
+    public bool IsAdoFocused => FocusedPane == PaneKind.AzureDevOps;
+    public bool IsSentryFocused => FocusedPane == PaneKind.Sentry;
+    public bool IsServicesFocused => FocusedPane == PaneKind.Services;
 
-    /// <summary>Called by the window whenever its width changes.</summary>
-    public void SetFittingColumns(int fits)
+    partial void OnFocusedPaneChanged(PaneKind value)
     {
-        _fittingColumns = fits;
-        UpdateLayoutColumns();
+        _settings.FocusedPane = value;
+        _settings.Save();
     }
 
-    /// <summary>
-    /// Every pane in one row when they fit, else one column. Anything between would leave a pane
-    /// orphaned on a row of its own, which looks like a mistake.
-    /// </summary>
-    private void UpdateLayoutColumns()
-    {
-        int panes = VisiblePaneCount;
-        LayoutColumns = panes > 1 && _fittingColumns >= panes ? panes : 1;
-    }
+    /// <summary>Gives a pane focus, or hands the room back evenly when it already has it.</summary>
+    [RelayCommand]
+    private void FocusPane(PaneKind pane) => FocusedPane = FocusedPane == pane ? PaneKind.None : pane;
+
+    [RelayCommand]
+    private void RestorePanes() => FocusedPane = PaneKind.None;
+
+    // What each pane is holding, shown on its sliver while another has focus. Empty for none, so a
+    // quiet pane's sliver carries no number to read.
+    [ObservableProperty] private string _adoSliverCount = "";
+    [ObservableProperty] private string _sentrySliverCount = "";
+    [ObservableProperty] private string _servicesSliverCount = "";
+
+    private static string SliverCount(int count) => count == 0 ? "" : count.ToString("N0");
 
     // A pane with nothing in it is ambiguous: quiet, never run, or quietly broken. Each one
     // therefore says when it last managed to look.
@@ -275,6 +284,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     public int VisiblePaneCount => (AdoEnabled ? 1 : 0) + (SentryEnabled ? 1 : 0) + (AppInsightsEnabled ? 1 : 0);
 
     public bool HasNoSources => VisiblePaneCount == 0;
+
+    /// <summary>Focus means something only with another pane to take room from.</summary>
+    public bool CanFocusPanes => VisiblePaneCount > 1;
 
     /// <summary>Whether the portal explainer is on screen right now.</summary>
     [ObservableProperty] private bool _isPortalHintVisible;
@@ -383,6 +395,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _adoEnabled = _settings.AdoEnabled;
         _sentryEnabled = _settings.SentryEnabled;
         _appInsightsEnabled = _settings.AppInsightsEnabled;
+        _focusedPane = _settings.FocusedPane;
 #pragma warning restore MVVMTK0034
         AdoStatus.IsEnabled = AdoEnabled;
         SentryStatus.IsEnabled = SentryEnabled;
@@ -600,19 +613,19 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     partial void OnAdoEnabledChanged(bool value)
     {
         _settings.AdoEnabled = value;
-        SwitchSource(AdoStatus, value, ClearAzureDevOps);
+        SwitchSource(AdoStatus, PaneKind.AzureDevOps, value, ClearAzureDevOps);
     }
 
     partial void OnSentryEnabledChanged(bool value)
     {
         _settings.SentryEnabled = value;
-        SwitchSource(SentryStatus, value, ClearSentry);
+        SwitchSource(SentryStatus, PaneKind.Sentry, value, ClearSentry);
     }
 
     partial void OnAppInsightsEnabledChanged(bool value)
     {
         _settings.AppInsightsEnabled = value;
-        SwitchSource(AppInsightsStatus, value, ClearAppInsights);
+        SwitchSource(AppInsightsStatus, PaneKind.Services, value, ClearAppInsights);
         if (value) _ = ResumeAzureSignInAsync();
     }
 
@@ -620,15 +633,19 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// Turns a source on or off. Off forgets what it last showed, so neither its pane, the badge
     /// nor an agent reads a list that is no longer being kept up.
     /// </summary>
-    private void SwitchSource(ConnectionStatus status, bool on, Action clear)
+    private void SwitchSource(ConnectionStatus status, PaneKind pane, bool on, Action clear)
     {
         status.IsEnabled = on;
         if (!on) clear();
+
+        // A pane that is gone cannot keep focus, and would otherwise take it back unasked when
+        // its source is turned on again.
+        if (!on && FocusedPane == pane) FocusedPane = PaneKind.None;
         _settings.Save();
 
         OnPropertyChanged(nameof(VisiblePaneCount));
         OnPropertyChanged(nameof(HasNoSources));
-        UpdateLayoutColumns();
+        OnPropertyChanged(nameof(CanFocusPanes));
         RefreshConnectionBanner();
         RefreshPaneStatuses();
 
@@ -850,6 +867,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             .Select(g => (g.Key, SentryProjectUrl(g.Key),
                           g.Count(), g.Count(i => i.IsFlagged), g.Count(i => i.IsMuted),
                           $"{g.Count()} unresolved")));
+
+        // Every rebuild, not only a poll's: a mute or a dismiss changes what the pane line and
+        // the sliver say as much as new data does.
+        RefreshPaneStatuses();
     }
 
     private string SentryProjectUrl(string slug)
@@ -1096,6 +1117,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         SentryPaneStatus = PaneLine(SentryStatus, _sentryLastPolled, CrashActions.Count > 0);
         ServicePaneStatus = PaneLine(AppInsightsStatus, _serviceLastPolled, ServiceActions.Count > 0);
 
+        AdoSliverCount = SliverCount(AdoAttentionCount());
+        SentrySliverCount = SliverCount(CrashActions.Count);
+        ServicesSliverCount = SliverCount(ServiceActions.Count);
+
         ExportForAgents();
     }
 
@@ -1164,6 +1189,9 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             .OrderBy(g => g.Key)
             .Select(g => (g.Key, PortalResourceUrl(g.Key),
                           g.Count(), 0, g.Count(f => f.IsMuted), DescribeKinds(g))));
+
+        // As for crashes: a mute, a dismiss or an ignore rule changes what the pane says.
+        RefreshPaneStatuses();
     }
 
     partial void OnSelectedWindowChanged(WindowChoice? value)
@@ -2150,14 +2178,17 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void UpdateBadge()
+    private void UpdateBadge() => _badge?.SetBadge(AdoAttentionCount());
+
+    /// <summary>Pull requests and builds waiting on the user: what the badge counts.</summary>
+    private int AdoAttentionCount()
     {
         // Acknowledged items live in their own collection now, so priority lists are inherently non-acked.
         var prBadge = FailedValidationPrs.Count(p => !p.IsApprovedByMe)
                     + UnstaffedPrs.Count(p => !p.IsApprovedByMe)
                     + AutoCompleteOffPrs.Count
                     + ReadyToReviewPrs.Count(p => !p.IsApprovedByMe);
-        _badge?.SetBadge(prBadge + FailedBuilds.Count);
+        return prBadge + FailedBuilds.Count;
     }
 
     private async Task ConnectAsync()
@@ -2306,7 +2337,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             _lastSentryIssues = issues;
             _sentryLastPolled = DateTimeOffset.Now;
             RebuildSentryList();
-            RefreshPaneStatuses();
 
             var muted = issues.Count(i => _settings.IsSentryIssueMuted(i.Id));
             var active = issues.Count - muted;
@@ -2329,7 +2359,6 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             _lastFindings = findings;
             _serviceLastPolled = DateTimeOffset.Now;
             RebuildServiceGroups();
-            RefreshPaneStatuses();
 
             var active = findings.Count(f => !f.IsMuted);
             AppInsightsStatus.Set(
