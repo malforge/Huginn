@@ -1,3 +1,6 @@
+v.1.7.7
+   - Fixed: on macOS the app menu and the About and Quit items called Huginn "Avalonia Application".
+
 v.1.7.6
    - Fixed: launching Huginn while it was already running started a second copy. Both polled and notified, and only one could take the port agents connect to, so the other ran with no way for agents to reach it, even after the first copy had quit. A second launch now brings the running window to the front instead.
    - Fixed: a copy that could not open the agents' port at startup never tried again. It now retries every 10 seconds and takes the port as soon as it is free, and Settings, Agents updates when it does.
