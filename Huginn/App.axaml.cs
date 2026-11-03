@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using System;
+using Avalonia.Controls;
+using Avalonia.Threading;
 using Huginn.Services;
 using Huginn.Services.Agent;
 using Huginn.ViewModels;
@@ -14,16 +16,20 @@ public partial class App : Application
     public static AppSettings Settings { get; private set; } = null!;
     public static INotificationService Notifications { get; private set; } = null!;
 
-    /// <summary>Why agents cannot reach this copy over HTTP, or null when they can.</summary>
-    public static string? AgentEndpointError { get; private set; }
+    /// <summary>Serves agents over HTTP for as long as the window runs.</summary>
+    public static AgentEndpoint? AgentEndpoint { get; private set; }
 
-    private static McpHttpHost? _agentHost;
+    /// <summary>Why agents cannot reach this copy over HTTP, or null when they can.</summary>
+    public static string? AgentEndpointError => AgentEndpoint?.Error;
+
+    private static SingleInstance? _instance;
 
     /// <summary>
     /// Called from Program.Main before Avalonia starts, to initialize shared services.
     /// </summary>
-    public static void InitializeServices()
+    public static void InitializeServices(SingleInstance instance)
     {
+        _instance = instance;
         var credentials = PlatformFactory.CreateCredentialStore();
         Settings = AppSettings.Load(credentials);
         Notifications = PlatformFactory.CreateNotificationService();
@@ -39,36 +45,31 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            StartAgentEndpoint();
-            desktop.Exit += (_, _) => _agentHost?.Dispose();
+            // A port that cannot be had leaves the rest of the app working, says why on the
+            // Agents page, and is tried again until it can be had.
+            AgentEndpoint = new AgentEndpoint(
+                McpEndpoint.Port, Settings.EnsureAgentToken(), McpServer.Respond, AgentEndpoint.DefaultRetryInterval);
+            AgentEndpoint.Start();
+            desktop.Exit += (_, _) => AgentEndpoint?.Dispose();
 
             desktop.MainWindow = new MainWindow
             {
                 DataContext = new MainWindowViewModel(Settings, Notifications),
             };
+
+            if (_instance != null)
+                _instance.ActivationRequested += () => Dispatcher.UIThread.Post(() => BringForward(desktop.MainWindow));
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    /// <summary>
-    /// Serves agents over HTTP for as long as the window runs. A port that cannot be had leaves
-    /// the rest of the app working and says why on the Agents page.
-    /// </summary>
-    private static void StartAgentEndpoint()
+    /// <summary>Shows the window to someone who launched Huginn again while it was running.</summary>
+    private static void BringForward(Window? window)
     {
-        try
-        {
-            _agentHost = new McpHttpHost(McpEndpoint.Port, Settings.EnsureAgentToken(), McpServer.Respond);
-            _agentHost.Start();
-            Log.Info($"MCP over HTTP at {McpEndpoint.Url}");
-        }
-        catch (Exception ex)
-        {
-            _agentHost?.Dispose();
-            _agentHost = null;
-            AgentEndpointError = $"Could not open {McpEndpoint.Url}: {ex.Message}";
-            Log.Error(AgentEndpointError);
-        }
+        if (window == null) return;
+        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        window.Show();
+        window.Activate();
     }
 }

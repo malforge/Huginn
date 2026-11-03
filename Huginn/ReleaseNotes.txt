@@ -1,3 +1,7 @@
+v.1.7.6
+   - Fixed: launching Huginn while it was already running started a second copy. Both polled and notified, and only one could take the port agents connect to, so the other ran with no way for agents to reach it, even after the first copy had quit. A second launch now brings the running window to the front instead.
+   - Fixed: a copy that could not open the agents' port at startup never tried again. It now retries every 10 seconds and takes the port as soon as it is free, and Settings, Agents updates when it does.
+
 v.1.7.5
    - A route recorded by its ids is one finding rather than one per id: guid and numeric segments read as {id}, e.g. "GET /v2/IncomingInvoices/{id}". The same route spelled in another case or with a trailing slash is folded in too, and shown in the spelling recorded most. A mute, an ignore rule or an always-show rule on a route keeps applying whichever spelling is shown.
    - Fixed: an agent asking why a route fails was told of far more failures than the route had, e.g. 3,419,580 behind 9,460 failed calls. Each failed request was counted once for every exception its operation threw anywhere. It now counts once, with the last exception its operation threw.

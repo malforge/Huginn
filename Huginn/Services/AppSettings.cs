@@ -24,7 +24,8 @@ public sealed partial class AppSettings
     public static string Profile { get; } =
         Environment.GetEnvironmentVariable("HUGINN_PROFILE")?.Trim() ?? "";
 
-    private static string FolderName => Profile.Length == 0 ? "Huginn" : $"Huginn-{Profile}";
+    /// <summary>This profile's folder name, which also names its one running copy.</summary>
+    internal static string FolderName => Profile.Length == 0 ? "Huginn" : $"Huginn-{Profile}";
 
     /// <summary>Prefix for this profile's credential entries.</summary>
     public static string CredentialPrefix => Profile.Length == 0 ? "Huginn" : $"Huginn-{Profile}";

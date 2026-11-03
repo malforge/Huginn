@@ -351,6 +351,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         RefreshIgnoredPatterns();
         RefreshAlwaysShown();
         _ = RefreshAgentRegistrationAsync();
+        if (App.AgentEndpoint != null) App.AgentEndpoint.Changed += OnAgentEndpointChanged;
 
         Connections.Add(AdoStatus);
         Connections.Add(SentryStatus);
@@ -1700,6 +1701,10 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private ClaudeCodeRegistration.Registration _agentRegistration;
 
 
+    /// <summary>The endpoint came up after a retry, so the Agents page no longer says it is down.</summary>
+    private void OnAgentEndpointChanged() =>
+        Dispatcher.UIThread.Post(() => _ = RefreshAgentRegistrationAsync());
+
     /// <summary>
     /// Reads the current state rather than assuming it. Someone may have registered or removed it
     /// outside Huginn, and a button that lies about what it will do is worse than no button.
@@ -2331,6 +2336,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         UpdateService.Instance.PropertyChanged -= OnUpdateServicePropertyChanged;
+        if (App.AgentEndpoint != null) App.AgentEndpoint.Changed -= OnAgentEndpointChanged;
         UnsubscribePollerEvents();
         _poller?.Dispose();
         _badge?.Dispose();

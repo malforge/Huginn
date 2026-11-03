@@ -1,6 +1,7 @@
 using Avalonia;
 using System;
 using System.Linq;
+using Huginn.Services;
 using Huginn.Services.Agent;
 using Velopack;
 
@@ -21,7 +22,15 @@ sealed class Program
         // and exits the process for those modes. No-op on normal launches.
         VelopackApp.Build().Run();
 
-        App.InitializeServices();
+        using SingleInstance? instance = SingleInstance.TryAcquire(AppSettings.FolderName);
+        if (instance == null)
+        {
+            if (!SingleInstance.SignalRunning(AppSettings.FolderName, TimeSpan.FromSeconds(5)))
+                Log.Warn("Huginn is already running but did not answer when asked to show its window. This launch exits.");
+            return 0;
+        }
+
+        App.InitializeServices(instance);
 
         BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(args);
