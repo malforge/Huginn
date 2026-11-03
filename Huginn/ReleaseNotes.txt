@@ -1,3 +1,6 @@
+v.1.7.10
+   - New: a watched Application Insights resource lists the services reporting to it, with how many requests each served in the last day. Tick the ones to judge, so a resource shared by several services shows findings only for those, without looking up their role names in the portal. The box beneath still takes names typed by hand.
+
 v.1.7.9
    - New: any pane can take most of the window. The button at the right of its header gives it the room and narrows the others to slivers showing their name and how many items they hold. Click a sliver to move the room to that pane. The arrows at the top of a sliver, or the focused pane's own button, share the window evenly again. Huginn remembers the choice.
    - Fixed: on macOS every update asked for the keychain once per token Huginn keeps: the Azure DevOps token, the Sentry token and the Azure sign-in. They are now kept together in one keychain entry, so an update asks once. The first launch after this update still asks for each one while moving it in. The Azure sign-in on a Mac is asked for once more.

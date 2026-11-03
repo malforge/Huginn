@@ -534,10 +534,30 @@
                                                             </CheckBox>
                                                             <!-- Only for a watched resource: a shared one is narrowed to the
                                                                  services that matter rather than judged whole. -->
-                                                            <TextBox IsVisible="{Binding IsSelected}" Margin="36,0,8,6" FontSize="11"
-                                                                     Text="{Binding Roles}"
-                                                                     PlaceholderText="Only these roles (cloud_RoleName, comma separated). Empty judges the whole resource."
-                                                                     ToolTip.Tip="For a resource several services report to, judge only these cloud roles"/>
+                                                            <StackPanel IsVisible="{Binding IsSelected}" Margin="36,0,8,6" Spacing="2">
+                                                                <TextBox FontSize="11"
+                                                                         Text="{Binding Roles}"
+                                                                         PlaceholderText="Only these roles (cloud_RoleName, comma separated). Empty judges the whole resource."
+                                                                         ToolTip.Tip="For a resource several services report to, judge only these cloud roles. Ticking a service below fills this in."/>
+                                                                <TextBlock Text="{Binding RolesStatus}" FontSize="11" Opacity="0.6"
+                                                                           TextWrapping="Wrap"
+                                                                           IsVisible="{Binding RolesStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                                <ItemsControl ItemsSource="{Binding SeenRoles}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate x:DataType="vm:SelectableRole">
+                                                                            <CheckBox IsChecked="{Binding IsSelected}" Padding="4,0" MinHeight="24"
+                                                                                      AutomationProperties.Name="{Binding Name}">
+                                                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                                    <TextBlock Text="{Binding Name}" FontSize="11"
+                                                                                               VerticalAlignment="Center"/>
+                                                                                    <TextBlock Text="{Binding Detail}" FontSize="10" Opacity="0.5"
+                                                                                               VerticalAlignment="Center"/>
+                                                                                </StackPanel>
+                                                                            </CheckBox>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </StackPanel>
                                                         </StackPanel>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>

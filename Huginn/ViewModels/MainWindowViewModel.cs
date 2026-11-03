@@ -1506,6 +1506,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         CreateAzureSignIn().SignOut();
         AppInsightsAccount = "";
+        _pickerCredential = null;
         AvailableComponents.Clear();
         FilteredComponents.Clear();
         ComponentPickerStatus = "";
@@ -1532,6 +1533,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
             using var cts = new CancellationTokenSource(SignInTimeout);
             var (credential, account) = await signIn.GetCredentialAsync(allowPrompt: true, cts.Token);
             AppInsightsAccount = account;
+            _pickerCredential = credential;
             using var client = new AppInsightsApiClient(credential);
             var found = await client.GetComponentsAsync(cts.Token);
 
@@ -1561,10 +1563,16 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 {
                     if (e.PropertyName is nameof(SelectableComponent.IsSelected) or nameof(SelectableComponent.Roles))
                         PersistWatchedComponents();
+                    if (e.PropertyName is nameof(SelectableComponent.IsSelected) && component.IsSelected
+                        && component.SeenRoles.Count == 0)
+                        _ = LoadRolesAsync(component);
                 };
 
                 AvailableComponents.Add(component);
             }
+
+            foreach (var component in AvailableComponents.Where(c => c.IsSelected))
+                _ = LoadRolesAsync(component);
 
             ComponentPickerStatus = $"{found.Count} resource{(found.Count != 1 ? "s" : "")} visible to you";
             ComponentFilter = "";
@@ -1581,6 +1589,35 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         finally
         {
             IsLoadingComponents = false;
+        }
+    }
+
+    /// <summary>
+    /// The sign-in the resource list was loaded with, kept for looking up each watched resource's
+    /// roles while the list is shown.
+    /// </summary>
+    private Azure.Core.TokenCredential? _pickerCredential;
+
+    /// <summary>Lists the roles reporting to a watched resource, so a shared one can be narrowed by ticking.</summary>
+    private async Task LoadRolesAsync(SelectableComponent component)
+    {
+        if (_pickerCredential is not { } credential) return;
+
+        component.RolesStatus = "Looking up the services reporting here…";
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+            using var client = new AppInsightsApiClient(credential);
+            var roles = CloudRoles.From(await client.QueryAsync(component.AppId, CloudRoles.Query, cts.Token));
+            component.ShowSeenRoles(roles);
+            component.RolesStatus = roles.Count == 0
+                ? "No service reported here in the last day."
+                : "Tick the services to judge. With none ticked, the whole resource is judged.";
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Could not list the roles of {component.DisplayName}: {ex.Message}");
+            component.RolesStatus = $"Could not list the services reporting here: {ex.Message}";
         }
     }
 
