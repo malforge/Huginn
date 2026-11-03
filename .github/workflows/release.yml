@@ -84,7 +84,7 @@ jobs:
         run: dotnet tool install --global vpk
 
       # macOS bundles want an .icns file. Build an iconset directory from the
-      # PNG and use iconutil to produce the icns — works at any source size.
+      # PNG and use iconutil to produce the icns, which works at any source size.
       # When the icon gets redesigned, drop a higher-resolution PNG into
       # Huginn/Assets/ (1024x1024 ideal) and this step produces a crisp icns.
       # `sips` and `iconutil` are preinstalled on macOS runners.
@@ -118,9 +118,48 @@ jobs:
             -p:PublishSingleFile=true \
             -o publish
 
+      # The Mac build is signed with Huginn's own certificate rather than ad hoc. The keychain
+      # trusts an app by its signature, and an ad-hoc one differs in every build, so macOS asked
+      # again for every stored token after every update. A self-signed certificate is not Apple's,
+      # so Gatekeeper still warns at install; what it gives is a signature that stays the same from
+      # one release to the next. Without the secret the build is ad-hoc signed and says so.
+      - name: Import macOS signing key
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          P12: ${{ secrets.MAC_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.MAC_SIGNING_P12_PASSWORD }}
+        run: |
+          set -e
+          if [ -z "$P12" ]; then
+            echo "::warning::MAC_SIGNING_P12 is not set, so this Mac build is only ad-hoc signed."
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/huginn-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/signing.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          # codesign will not use an identity whose certificate is untrusted, and a self-signed one
+          # stays untrusted until this runner is told otherwise.
+          security find-certificate -c "Huginn Release Signing" -p "$KEYCHAIN" > "$RUNNER_TEMP/signing.cer"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/signing.cer"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          echo "SIGN_IDENTITY=Huginn Release Signing" >> "$GITHUB_ENV"
+          echo "SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
       - name: vpk pack
         shell: bash
         run: |
+          SIGN=()
+          if [ -n "$SIGN_IDENTITY" ]; then
+            SIGN=(--signAppIdentity "$SIGN_IDENTITY" --keychain "$SIGN_KEYCHAIN")
+          fi
           vpk pack \
             --packId Huginn \
             --packVersion ${{ needs.validate-version.outputs.version }} \
@@ -130,7 +169,15 @@ jobs:
             --packAuthors "Morten Aune Lyrstad" \
             --runtime ${{ matrix.rid }} \
             --icon ${{ matrix.iconPath }} \
-            ${{ matrix.extraVpkArgs }}
+            ${{ matrix.extraVpkArgs }} \
+            "${SIGN[@]}"
+
+      - name: Show the Mac app's signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          unzip -q -o Releases/*-Portable.zip -d "$RUNNER_TEMP/portable"
+          codesign -dvv --requirements - "$RUNNER_TEMP/portable/Huginn.app" 2>&1 || true
 
       - name: Upload pack artifacts
         uses: actions/upload-artifact@v7
@@ -140,8 +187,11 @@ jobs:
           retention-days: 7
           path: Releases/*
 
+  # Only main and prerelease publish. A run started by hand on any other branch builds the
+  # packages and keeps them as artifacts, for trying a build before it ships.
   release:
     needs: [validate-version, pack]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prerelease'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -178,7 +228,7 @@ jobs:
           INSTALL_GUIDE=$(cat <<'EOF'
           ## First time installing?
 
-          Huginn is an open-source personal project and isn't code-signed. Windows SmartScreen and macOS Gatekeeper will both show a warning on first install — **that's expected**. Code-signing certificates cost real money and aren't worth it for a free personal tool. The source is public on this repo; you can read it.
+          Huginn is an open-source personal project and isn't signed by Microsoft or Apple. Windows SmartScreen and macOS Gatekeeper will both show a warning on first install: **that's expected**. Their certificates cost real money and aren't worth it for a free personal tool. The source is public on this repo; you can read it.
 
           **Windows**
 
@@ -188,11 +238,11 @@ jobs:
 
           **macOS**
 
-          1. Download the `.pkg` for your Mac: `Huginn-osx-arm64-Setup.pkg` (Apple Silicon — M1/M2/M3/M4) or `Huginn-osx-x64-Setup.pkg` (Intel). Not sure? Apple menu → About This Mac → the **Chip**/**Processor** line.
-          2. Open it. macOS will block it because it isn't signed — that's expected. In the warning, click **Done** (or **Cancel**) — **not "Move to Trash"**, which deletes the installer you just downloaded.
+          1. Download the `.pkg` for your Mac: `Huginn-osx-arm64-Setup.pkg` (Apple Silicon: M1/M2/M3/M4) or `Huginn-osx-x64-Setup.pkg` (Intel). Not sure? Apple menu → About This Mac → the **Chip**/**Processor** line.
+          2. Open it. macOS will block it because Apple hasn't vouched for it; that's expected. In the warning, click **Done** (or **Cancel**), **not "Move to Trash"**, which deletes the installer you just downloaded.
           3. Open **System Settings → Privacy & Security**, scroll to the **Security** section, and click **Open Anyway** next to the note about Huginn being blocked. Authenticate, confirm **Open**, then follow the installer.
 
-          Once installed, future updates download and apply themselves the next time you launch the app — you don't need to repeat any of this.
+          Once installed, future updates download and apply themselves the next time you launch the app, so you don't need to repeat any of this.
 
           ---
           EOF
