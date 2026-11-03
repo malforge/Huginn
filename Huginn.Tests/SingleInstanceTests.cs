@@ -1,63 +1,50 @@
 using System;
+using System.IO;
 using System.Threading;
 using Huginn.Services;
 using Xunit;
 
 namespace Huginn.Tests;
 
-public sealed class SingleInstanceTests
+public sealed class SingleInstanceTests : IDisposable
 {
-    private static string UniqueName() => $"Huginn-tests-{Guid.NewGuid():N}";
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"Huginn-tests-{Guid.NewGuid():N}");
 
-    /// <summary>
-    /// The running copy, on a thread of its own. A claim belongs to the thread that made it, and a
-    /// second claim from that same thread would be granted.
-    /// </summary>
-    private sealed class RunningCopy : IDisposable
+    public void Dispose()
     {
-        private readonly ManualResetEventSlim _claimed = new();
-        private readonly ManualResetEventSlim _release = new();
-        private readonly Thread _thread;
-
-        public SingleInstance? Instance { get; private set; }
-
-        public RunningCopy(string name)
+        try
         {
-            _thread = new Thread(() =>
-            {
-                using SingleInstance? instance = SingleInstance.TryAcquire(name);
-                Instance = instance;
-                _claimed.Set();
-                _release.Wait();
-            });
-            _thread.Start();
-            _claimed.Wait();
+            Directory.Delete(_root, recursive: true);
         }
-
-        public void Dispose()
+        catch (IOException)
         {
-            _release.Set();
-            _thread.Join();
         }
+    }
+
+    /// <summary>A profile of its own: its folder and its signalling name.</summary>
+    private (string Directory, string Name) Profile()
+    {
+        string name = $"Huginn-tests-{Guid.NewGuid():N}";
+        return (Path.Combine(_root, name), name);
     }
 
     [Fact]
     public void A_second_launch_is_turned_away_while_the_first_runs()
     {
-        string name = UniqueName();
-        using RunningCopy first = new(name);
+        var (dir, name) = Profile();
+        using SingleInstance? first = SingleInstance.TryAcquire(dir, name);
 
-        Assert.NotNull(first.Instance);
-        Assert.Null(SingleInstance.TryAcquire(name));
+        Assert.NotNull(first);
+        Assert.Null(SingleInstance.TryAcquire(dir, name));
     }
 
     [Fact]
     public void A_second_launch_brings_the_running_copy_forward()
     {
-        string name = UniqueName();
-        using RunningCopy first = new(name);
+        var (dir, name) = Profile();
+        using SingleInstance? first = SingleInstance.TryAcquire(dir, name);
         using ManualResetEventSlim activated = new();
-        first.Instance!.ActivationRequested += activated.Set;
+        first!.ActivationRequested += activated.Set;
 
         Assert.True(SingleInstance.SignalRunning(name, TimeSpan.FromSeconds(5)));
         Assert.True(activated.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
@@ -66,25 +53,42 @@ public sealed class SingleInstanceTests
     [Fact]
     public void A_launch_after_the_first_copy_exits_runs()
     {
-        string name = UniqueName();
-        new RunningCopy(name).Dispose();
+        var (dir, name) = Profile();
+        SingleInstance.TryAcquire(dir, name)!.Dispose();
 
-        using SingleInstance? next = SingleInstance.TryAcquire(name);
+        using SingleInstance? next = SingleInstance.TryAcquire(dir, name);
         Assert.NotNull(next);
     }
 
     [Fact]
     public void Profiles_do_not_turn_each_other_away()
     {
-        using RunningCopy installed = new(UniqueName());
+        var (dir, name) = Profile();
+        var (otherDir, otherName) = Profile();
+        using SingleInstance? installed = SingleInstance.TryAcquire(dir, name);
 
-        using SingleInstance? other = SingleInstance.TryAcquire(UniqueName());
+        using SingleInstance? other = SingleInstance.TryAcquire(otherDir, otherName);
+        Assert.NotNull(installed);
         Assert.NotNull(other);
+    }
+
+    [Fact]
+    public void Another_program_holding_the_file_for_a_moment_does_not_turn_a_launch_away()
+    {
+        var (dir, name) = Profile();
+        Directory.CreateDirectory(dir);
+        FileStream scanner = new(
+            Path.Combine(dir, "instance.lock"), FileMode.OpenOrCreate, FileAccess.Read, FileShare.ReadWrite);
+        using Timer done = new(_ => scanner.Dispose(), null, 100, Timeout.Infinite);
+
+        using SingleInstance? instance = SingleInstance.TryAcquire(dir, name);
+
+        Assert.NotNull(instance);
     }
 
     [Fact]
     public void Signalling_with_nothing_running_reports_it()
     {
-        Assert.False(SingleInstance.SignalRunning(UniqueName(), TimeSpan.FromMilliseconds(200)));
+        Assert.False(SingleInstance.SignalRunning(Profile().Name, TimeSpan.FromMilliseconds(200)));
     }
 }

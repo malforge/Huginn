@@ -27,7 +27,7 @@ public partial class App : Application
     /// <summary>
     /// Called from Program.Main before Avalonia starts, to initialize shared services.
     /// </summary>
-    public static void InitializeServices(SingleInstance instance)
+    public static void InitializeServices(SingleInstance? instance)
     {
         _instance = instance;
         var credentials = PlatformFactory.CreateCredentialStore();

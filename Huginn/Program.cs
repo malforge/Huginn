@@ -22,12 +22,13 @@ sealed class Program
         // and exits the process for those modes. No-op on normal launches.
         VelopackApp.Build().Run();
 
-        using SingleInstance? instance = SingleInstance.TryAcquire(AppSettings.FolderName);
+        using SingleInstance? instance = SingleInstance.TryAcquire(AppSettings.SettingsDir, AppSettings.FolderName);
+        // A copy that answers is shown instead. One that cannot be claimed but answers nothing
+        // is not known to exist, so this launch runs rather than leave the person with no window.
         if (instance == null)
         {
-            if (!SingleInstance.SignalRunning(AppSettings.FolderName, TimeSpan.FromSeconds(5)))
-                Log.Warn("Huginn is already running but did not answer when asked to show its window. This launch exits.");
-            return 0;
+            if (SingleInstance.SignalRunning(AppSettings.FolderName, TimeSpan.FromSeconds(5))) return 0;
+            Log.Warn("Could not claim this profile, and no running copy answered. Starting anyway.");
         }
 
         App.InitializeServices(instance);

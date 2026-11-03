@@ -1,5 +1,5 @@
 using System;
-using System.Diagnostics;
+using System.IO;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -14,56 +14,61 @@ namespace Huginn.Services;
 /// <remarks>
 /// Two copies of one profile poll everything twice, notify twice, and only one of them can hold
 /// the agents' port. The other runs on without it, unreachable to every agent.
+/// <para>
+/// The claim is a lock file in the profile's own folder, so it covers everything that shares that
+/// folder: every launch by this person, from a terminal, Finder or sign-in alike. A named mutex
+/// does not, because on macOS .NET scopes it to the Unix session, and a terminal is a session of
+/// its own. The operating system lets go of the file when the process ends, crash included.
+/// </para>
 /// </remarks>
 public sealed class SingleInstance : IDisposable
 {
-    private readonly Mutex _mutex;
+    private readonly FileStream _lock;
     private readonly string _pipeName;
     private readonly CancellationTokenSource _stop = new();
 
     /// <summary>Raised on a background thread when another launch asks this copy to show itself.</summary>
     public event Action? ActivationRequested;
 
-    private SingleInstance(Mutex mutex, string pipeName)
+    private SingleInstance(FileStream claim, string pipeName)
     {
-        _mutex = mutex;
+        _lock = claim;
         _pipeName = pipeName;
         _ = Task.Run(ListenAsync);
     }
 
     /// <summary>
-    /// Claims <paramref name="name"/> for this process, or returns null when another copy holds it.
-    /// Dispose on the thread that claimed it, since the claim belongs to that thread.
+    /// Claims the profile whose folder is <paramref name="directory"/>, or returns null when it
+    /// cannot: another copy holds it, or something else has the file open. <paramref name="name"/>
+    /// names the channel a later launch signals on.
     /// </summary>
-    public static SingleInstance? TryAcquire(string name)
+    /// <remarks>
+    /// Tried a few times before giving up, since a virus scanner or indexer opening the file holds
+    /// it for a moment. Whether a copy is actually running is for <see cref="SignalRunning"/> to
+    /// say: null alone does not mean one is.
+    /// </remarks>
+    public static SingleInstance? TryAcquire(string directory, string name)
     {
-        Mutex mutex;
-        try
+        for (int attempt = 1; ; attempt++)
         {
-            mutex = new Mutex(false, MutexName(name));
+            try
+            {
+                Directory.CreateDirectory(directory);
+                FileStream claim = new(
+                    Path.Combine(directory, "instance.lock"),
+                    FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                return new SingleInstance(claim, PipeName(name));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == ClaimAttempts) return null;
+                Thread.Sleep(ClaimRetryDelay);
+            }
         }
-        catch (UnauthorizedAccessException)
-        {
-            // Held by a copy running elevated, which this one may not even open. It still runs.
-            return null;
-        }
-
-        bool owned;
-        try
-        {
-            owned = mutex.WaitOne(0);
-        }
-        catch (AbandonedMutexException)
-        {
-            // The holder ended without letting go, a crash typically. The claim is ours now.
-            owned = true;
-        }
-
-        if (owned) return new SingleInstance(mutex, PipeName(name));
-
-        mutex.Dispose();
-        return null;
     }
+
+    private const int ClaimAttempts = 4;
+    private static readonly TimeSpan ClaimRetryDelay = TimeSpan.FromMilliseconds(150);
 
     /// <summary>Asks the copy holding <paramref name="name"/> to come to the front.</summary>
     public static bool SignalRunning(string name, TimeSpan timeout)
@@ -79,26 +84,17 @@ public sealed class SingleInstance : IDisposable
             client.Connect((int)timeout.TotalMilliseconds);
             return true;
         }
-        catch (Exception ex) when (ex is TimeoutException or System.IO.IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is TimeoutException or IOException or UnauthorizedAccessException)
         {
             return false;
         }
     }
 
-    private static string MutexName(string name) => $"{name}.instance";
-
     /// <summary>
-    /// Scoped like the claim, to this person's session. Pipe names are shared by the whole
-    /// machine, so another person signed in at the same time would otherwise hold it already.
+    /// Scoped like the claim, to this person. Pipe names are shared by the whole machine, so
+    /// another person signed in at the same time would otherwise hold it already.
     /// </summary>
-    private static string PipeName(string name) =>
-        $"{name}.{Environment.UserName}.{SessionId()}.activate";
-
-    private static int SessionId()
-    {
-        using Process self = Process.GetCurrentProcess();
-        return self.SessionId;
-    }
+    private static string PipeName(string name) => $"{name}.{Environment.UserName}.activate";
 
     /// <summary>Each connection is one request to come forward; nothing is read from it.</summary>
     private async Task ListenAsync()
@@ -135,8 +131,7 @@ public sealed class SingleInstance : IDisposable
     public void Dispose()
     {
         _stop.Cancel();
-        _mutex.ReleaseMutex();
-        _mutex.Dispose();
+        _lock.Dispose();
     }
 
     private const int AsfwAny = -1;
