@@ -238,8 +238,10 @@
                             <TextBlock Classes="pagetitle" Text="Azure DevOps"/>
                             <TextBlock Classes="pagenote"
                                        Text="Pull requests waiting on you, and the pipelines you care about. The token is yours, so Huginn sees exactly what you see."/>
+                            <CheckBox IsChecked="{Binding AdoEnabled}" Content="Use Azure DevOps"
+                                      ToolTip.Tip="Turned off, Huginn neither checks it nor shows its pane, and asks for nothing it is missing"/>
 
-                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0">
+                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0" IsEnabled="{Binding AdoEnabled}">
                                 <StackPanel Grid.Column="0" Spacing="8">
                                     <TextBlock Classes="group" Text="Connection"/>
 
@@ -334,8 +336,10 @@
                             <TextBlock Classes="pagetitle" Text="Sentry"/>
                             <TextBlock Classes="pagenote"
                                        Text="Crashes from the mobile apps. An issue is raised when it is new, when it has come back, or when it has reached enough people to matter."/>
+                            <CheckBox IsChecked="{Binding SentryEnabled}" Content="Use Sentry"
+                                      ToolTip.Tip="Turned off, Huginn neither checks it nor shows its pane, and asks for nothing it is missing"/>
 
-                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0">
+                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0" IsEnabled="{Binding SentryEnabled}">
                                 <StackPanel Grid.Column="0" Spacing="8">
                                     <TextBlock Classes="group" Text="Connection"/>
 
@@ -420,8 +424,10 @@
                             <TextBlock Classes="pagetitle" Text="Application Insights"/>
                             <TextBlock Classes="pagenote"
                                        Text="Server telemetry: routes that are failing, routes that have gone slow, and the dependencies letting them down."/>
+                            <CheckBox IsChecked="{Binding AppInsightsEnabled}" Content="Use Application Insights"
+                                      ToolTip.Tip="Turned off, Huginn neither checks it nor shows its pane, and asks for nothing it is missing"/>
 
-                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0">
+                            <Grid ColumnDefinitions="*,24,*" Margin="0,8,0,0" IsEnabled="{Binding AppInsightsEnabled}">
                                 <StackPanel Grid.Column="0" Spacing="8">
                                     <TextBlock Classes="group" Text="Sign-in"/>
 
@@ -817,7 +823,7 @@
         <UniformGrid Grid.Row="2" IsVisible="{Binding !IsSettingsVisible}"
                      Columns="{Binding LayoutColumns}">
                 <!-- Pull requests and builds share a column: neither ever runs to many rows, and the width they give back goes to crashes and services. -->
-                <Grid RowDefinitions="*,Auto">
+                <Grid RowDefinitions="*,Auto" IsVisible="{Binding AdoEnabled}">
                     <Border Grid.Row="0" Margin="4" Padding="2" CornerRadius="6"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1">
@@ -1044,7 +1050,7 @@
                 </Border>
                 </Grid>
 
-                <Border Margin="4" Padding="2" CornerRadius="6"
+                <Border Margin="4" Padding="2" CornerRadius="6" IsVisible="{Binding SentryEnabled}"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1">
                     <!--
@@ -1165,7 +1171,7 @@
                     </Grid>
                 </Border>
 
-                <Border Margin="4" Padding="2" CornerRadius="6"
+                <Border Margin="4" Padding="2" CornerRadius="6" IsVisible="{Binding AppInsightsEnabled}"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1">
                     <!--
@@ -1320,6 +1326,11 @@
                     </Grid>
                 </Border>
         </UniformGrid>
+        <Panel Grid.Row="2" IsVisible="{Binding !IsSettingsVisible}">
+            <TextBlock IsVisible="{Binding HasNoSources}" Opacity="0.6" FontSize="13" Margin="16"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
+                       Text="Every source is turned off. Turn one on in Settings to see it here."/>
+        </Panel>
 
         <!-- ═══ PORTAL EXPLAINER ═══
              What the portal does to the link, said once. The query does arrive; the portal

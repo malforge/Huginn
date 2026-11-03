@@ -49,11 +49,38 @@ public sealed class PollingService : IDisposable
         _settings = settings;
     }
 
+    /// <summary>
+    /// Starts every source that is turned on. Returns whether Azure DevOps connected, or true when
+    /// it is off. The other sources start either way: one that is missing a token or failing to
+    /// sign in must not stop the rest from reporting.
+    /// </summary>
     public async Task<bool> StartAsync()
     {
         Stop();
         _authFailed = false;
 
+        bool adoOk = !_settings.AdoEnabled || await ConnectAzureDevOpsAsync();
+        if (adoOk && _settings.AdoEnabled) StatusChanged?.Invoke("Connected");
+
+        ConnectSentry();
+
+        _cts = new CancellationTokenSource();
+
+        // Each source keeps its own cadence: they are independent, and forcing the slow one to
+        // the fast one only re-reads the same data. A source turned off has no client, or returns
+        // at once, so its loop costs nothing.
+        _adoLoop = LoopAsync(PollAzureDevOpsOnceAsync, () => _settings.PollIntervalMinutes, _cts.Token);
+        _sentryLoop = LoopAsync(PollSentryOnceAsync, () => _settings.SentryPollIntervalMinutes, _cts.Token);
+        _appInsightsLoop = LoopAsync(
+            PollAppInsightsOnceAsync, () => _settings.AppInsightsPollIntervalMinutes, _cts.Token);
+        return adoOk;
+    }
+
+    /// <summary>Signs in to Azure DevOps, reporting any failure through <see cref="ErrorOccurred"/>.</summary>
+    private async Task<bool> ConnectAzureDevOpsAsync()
+    {
+        // Cleared first, so a failed sign-in cannot poll with the identity of an earlier one.
+        _myUserId = "";
         var pat = _settings.GetPat();
         if (string.IsNullOrEmpty(pat))
         {
@@ -78,25 +105,13 @@ public sealed class PollingService : IDisposable
                 return false;
             }
 
-            StatusChanged?.Invoke("Connected");
+            return true;
         }
         catch (Exception ex)
         {
             ErrorOccurred?.Invoke($"Connection failed: {ex.Message}");
             return false;
         }
-
-        ConnectSentry();
-
-        _cts = new CancellationTokenSource();
-
-        // Each source keeps its own cadence: they are independent, and forcing the slow one to
-        // the fast one only re-reads the same data.
-        _adoLoop = LoopAsync(PollAzureDevOpsOnceAsync, () => _settings.PollIntervalMinutes, _cts.Token);
-        _sentryLoop = LoopAsync(PollSentryOnceAsync, () => _settings.SentryPollIntervalMinutes, _cts.Token);
-        _appInsightsLoop = LoopAsync(
-            PollAppInsightsOnceAsync, () => _settings.AppInsightsPollIntervalMinutes, _cts.Token);
-        return true;
     }
 
     public void Stop()
@@ -124,7 +139,7 @@ public sealed class PollingService : IDisposable
         _sentry?.Dispose();
         _sentry = null;
 
-        if (!_settings.IsSentryConfigured) return;
+        if (!_settings.SentryEnabled || !_settings.IsSentryConfigured) return;
 
         _sentry = new SentryApiClient(_settings.GetSentryApiBaseUrl(), _settings.GetSentryToken()!);
         _sentry.AuthFailed += reason =>
@@ -175,7 +190,7 @@ public sealed class PollingService : IDisposable
     /// </summary>
     private async Task PollAppInsightsOnceAsync(CancellationToken ct = default)
     {
-        if (_settings.WatchedAppInsights.Count == 0) return;
+        if (!_settings.AppInsightsEnabled || _settings.WatchedAppInsights.Count == 0) return;
         if (!await _appInsightsLock.WaitAsync(0, ct)) return;
 
         try
@@ -243,7 +258,7 @@ public sealed class PollingService : IDisposable
 
     private async Task PollAzureDevOpsOnceAsync(CancellationToken ct = default)
     {
-        if (_client == null || string.IsNullOrEmpty(_myUserId)) return;
+        if (!_settings.AdoEnabled || _client == null || string.IsNullOrEmpty(_myUserId)) return;
         if (!await _pollLock.WaitAsync(0, ct)) return;
 
         try
@@ -307,7 +322,7 @@ public sealed class PollingService : IDisposable
     /// </summary>
     private async Task<SentryMonitor.SentrySnapshot?> PollSentryOnceAsync(CancellationToken ct = default)
     {
-        if (_sentry is null) return null;
+        if (!_settings.SentryEnabled || _sentry is null) return null;
         if (!await _sentryLock.WaitAsync(0, ct)) return null;
 
         try

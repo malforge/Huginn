@@ -230,6 +230,19 @@ public sealed partial class AppSettings
     public bool RankSentryByAllTime { get; set; }
 
     /// <summary>
+    /// Whether each source is used at all. One turned off is neither polled nor shown, and its
+    /// missing setup raises nothing. On unless turned off, so settings saved before these existed
+    /// keep every source.
+    /// </summary>
+    public bool AdoEnabled { get; set; } = true;
+
+    /// <inheritdoc cref="AdoEnabled"/>
+    public bool SentryEnabled { get; set; } = true;
+
+    /// <inheritdoc cref="AdoEnabled"/>
+    public bool AppInsightsEnabled { get; set; } = true;
+
+    /// <summary>
     /// Whether each source may interrupt with a desktop notification. Only the interruption: the
     /// panes and the badge show everything either way. On unless turned off, so settings saved
     /// before these existed keep notifying as they did.
@@ -597,6 +610,9 @@ public sealed partial class AppSettings
             NotifyBuilds = NotifyBuilds,
             NotifyCrashes = NotifyCrashes,
             NotifyServices = NotifyServices,
+            AdoEnabled = AdoEnabled,
+            SentryEnabled = SentryEnabled,
+            AppInsightsEnabled = AppInsightsEnabled,
             AgentToken = AgentToken,
         }, SettingsJsonContext.Default.SettingsDto);
         File.WriteAllText(SettingsPath, json);
@@ -668,6 +684,9 @@ public sealed partial class AppSettings
                 NotifyBuilds = dto.NotifyBuilds,
                 NotifyCrashes = dto.NotifyCrashes,
                 NotifyServices = dto.NotifyServices,
+                AdoEnabled = dto.AdoEnabled,
+                SentryEnabled = dto.SentryEnabled,
+                AppInsightsEnabled = dto.AppInsightsEnabled,
                 AgentToken = dto.AgentToken ?? "",
             };
         }
@@ -721,6 +740,9 @@ public sealed partial class AppSettings
         public bool NotifyBuilds { get; set; } = true;
         public bool NotifyCrashes { get; set; } = true;
         public bool NotifyServices { get; set; } = true;
+        public bool AdoEnabled { get; set; } = true;
+        public bool SentryEnabled { get; set; } = true;
+        public bool AppInsightsEnabled { get; set; } = true;
         public string? AgentToken { get; set; }
     }
 

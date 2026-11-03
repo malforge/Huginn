@@ -184,6 +184,26 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// </summary>
     [ObservableProperty] private int _layoutColumns = 1;
 
+    /// <summary>How many panes side by side the window has room for.</summary>
+    private int _fittingColumns = 1;
+
+    /// <summary>Called by the window whenever its width changes.</summary>
+    public void SetFittingColumns(int fits)
+    {
+        _fittingColumns = fits;
+        UpdateLayoutColumns();
+    }
+
+    /// <summary>
+    /// Every pane in one row when they fit, else one column. Anything between would leave a pane
+    /// orphaned on a row of its own, which looks like a mistake.
+    /// </summary>
+    private void UpdateLayoutColumns()
+    {
+        int panes = VisiblePaneCount;
+        LayoutColumns = panes > 1 && _fittingColumns >= panes ? panes : 1;
+    }
+
     // A pane with nothing in it is ambiguous: quiet, never run, or quietly broken. Each one
     // therefore says when it last managed to look.
     [ObservableProperty] private string _adoPaneStatus = "not checked yet";
@@ -238,6 +258,23 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _notifyBuilds;
     [ObservableProperty] private bool _notifyCrashes;
     [ObservableProperty] private bool _notifyServices;
+
+    /// <summary>
+    /// Whether each source is used. Applied as soon as it is ticked rather than when settings
+    /// close, so its pane comes and goes with the box.
+    /// </summary>
+    [ObservableProperty] private bool _adoEnabled;
+
+    /// <inheritdoc cref="AdoEnabled"/>
+    [ObservableProperty] private bool _sentryEnabled;
+
+    /// <inheritdoc cref="AdoEnabled"/>
+    [ObservableProperty] private bool _appInsightsEnabled;
+
+    /// <summary>Panes for the sources in use. A source turned off has nothing to show.</summary>
+    public int VisiblePaneCount => (AdoEnabled ? 1 : 0) + (SentryEnabled ? 1 : 0) + (AppInsightsEnabled ? 1 : 0);
+
+    public bool HasNoSources => VisiblePaneCount == 0;
 
     /// <summary>Whether the portal explainer is on screen right now.</summary>
     [ObservableProperty] private bool _isPortalHintVisible;
@@ -341,7 +378,15 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         // running. Only the person turning it on decides which copy starts at sign-in.
 #pragma warning disable MVVMTK0034
         _autoStartEnabled = _autoStart.IsEnabled;
+
+        // Read without their change handlers too, which reconnect.
+        _adoEnabled = _settings.AdoEnabled;
+        _sentryEnabled = _settings.SentryEnabled;
+        _appInsightsEnabled = _settings.AppInsightsEnabled;
 #pragma warning restore MVVMTK0034
+        AdoStatus.IsEnabled = AdoEnabled;
+        SentryStatus.IsEnabled = SentryEnabled;
+        AppInsightsStatus.IsEnabled = AppInsightsEnabled;
 
         UpdateService.Instance.PropertyChanged += OnUpdateServicePropertyChanged;
         UpdateService.Instance.StartPolling();
@@ -370,16 +415,11 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         else if (_settings.HasSentryCredentials)
             SentryStatus.Set(ConnectionState.NotConfigured, "No projects selected");
 
-        _ = ResumeAzureSignInAsync();
+        if (AppInsightsEnabled) _ = ResumeAzureSignInAsync();
 
-        if (_settings.IsAdoConfigured)
-        {
-            _ = ConnectAsync();
-        }
-        else
-        {
-            OpenSettingsOn(PageNeedingAttention());
-        }
+        // Every source that is on starts, whether or not Azure DevOps is set up yet.
+        _ = ConnectAsync();
+        if (AdoEnabled && !_settings.IsAdoConfigured) OpenSettingsOn(PageNeedingAttention());
 
         RefreshConnectionBanner();
     }
@@ -555,6 +595,97 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                + $"{unhealthy[1].Title}: {unhealthy[1].StateText}.",
             _ => $"{unhealthy.Count} connections need attention.",
         };
+    }
+
+    partial void OnAdoEnabledChanged(bool value)
+    {
+        _settings.AdoEnabled = value;
+        SwitchSource(AdoStatus, value, ClearAzureDevOps);
+    }
+
+    partial void OnSentryEnabledChanged(bool value)
+    {
+        _settings.SentryEnabled = value;
+        SwitchSource(SentryStatus, value, ClearSentry);
+    }
+
+    partial void OnAppInsightsEnabledChanged(bool value)
+    {
+        _settings.AppInsightsEnabled = value;
+        SwitchSource(AppInsightsStatus, value, ClearAppInsights);
+        if (value) _ = ResumeAzureSignInAsync();
+    }
+
+    /// <summary>
+    /// Turns a source on or off. Off forgets what it last showed, so neither its pane, the badge
+    /// nor an agent reads a list that is no longer being kept up.
+    /// </summary>
+    private void SwitchSource(ConnectionStatus status, bool on, Action clear)
+    {
+        status.IsEnabled = on;
+        if (!on) clear();
+        _settings.Save();
+
+        OnPropertyChanged(nameof(VisiblePaneCount));
+        OnPropertyChanged(nameof(HasNoSources));
+        UpdateLayoutColumns();
+        RefreshConnectionBanner();
+        RefreshPaneStatuses();
+
+        // Either way: a source turned on needs a client, and turning Azure DevOps off may be what
+        // lets the others start, when it was the one failing.
+        _ = ConnectAsync();
+    }
+
+    private void ClearAzureDevOps()
+    {
+        _lastPollResult = null;
+        _adoLastPolled = null;
+        FailedValidationPrs.Clear();
+        UnstaffedPrs.Clear();
+        AutoCompleteOffPrs.Clear();
+        ReadyToReviewPrs.Clear();
+        MyActivePrs.Clear();
+        FailedBuilds.Clear();
+        RetryingBuilds.Clear();
+        AcknowledgedPrs.Clear();
+        AcknowledgedBuilds.Clear();
+        HasFailedValidation = false;
+        HasUnstaffedPrs = false;
+        HasAutoCompleteOffPrs = false;
+        HasMyActivePrs = false;
+        HasReadyToReview = false;
+        HasFailedBuilds = false;
+        HasRetryingBuilds = false;
+        HasAcknowledged = false;
+        HiddenApprovedCount = 0;
+        StatusText = "";
+        UpdateBadge();
+    }
+
+    private void ClearSentry()
+    {
+        _lastSentryIssues = [];
+        _sentryLastPolled = null;
+        RebuildSentryList();
+
+        // Without a check time the first poll after turning it back on takes a baseline, rather
+        // than announcing everything Sentry saw while it was off.
+        _settings.SentryCheckedAt = null;
+    }
+
+    private void ClearAppInsights()
+    {
+        _lastFindings = [];
+        _lastSuppressed = [];
+        _serviceLastPolled = null;
+        RebuildServiceGroups();
+        Sync(SuppressedSubjects, []);
+        SuppressedCount = 0;
+        foreach (ServiceSection section in ServiceSections) section.TooFewCount = 0;
+        Sync(UnreadableResources, []);
+        UnreadableCount = 0;
+        UnreadableSummary = "";
     }
 
     partial void OnPipelineFilterChanged(string value) => ApplyPipelineFilter();
@@ -977,8 +1108,8 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         AgentSource Source(ConnectionStatus status, DateTimeOffset? polled) => new()
         {
             Name = status.Title,
-            State = status.State.ToString(),
-            Message = status.Message,
+            State = status.IsEnabled ? status.State.ToString() : "Off",
+            Message = status.IsEnabled ? status.Message : "Turned off in Huginn's settings",
             LastPolled = polled == default ? null : polled,
             NeedsAttention = status.NeedsAttention,
         };
@@ -2051,23 +2182,29 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
         _poller.StatusChanged += OnStatusChanged;
         _poller.ErrorOccurred += OnErrorOccurred;
 
-        AdoStatus.Set(ConnectionState.Connecting);
+        if (AdoEnabled) AdoStatus.Set(ConnectionState.Connecting);
 
         var ok = await _poller.StartAsync();
-        IsConnected = ok;
+
+        // Running whether or not Azure DevOps signed in, since the other sources poll regardless.
+        IsConnected = true;
 
         // A failure has already been reported through ErrorOccurred and set the state by now,
         // so only the success edge is left to record here.
-        if (ok) AdoStatus.Set(ConnectionState.Connected);
+        if (ok && AdoEnabled) AdoStatus.Set(ConnectionState.Connected);
     }
 
     private void OnPollCompleted(PollResult result)
-        => Dispatcher.UIThread.Post(() => HandlePollResult(result));
+        => Dispatcher.UIThread.Post(() =>
+        {
+            // A poll already under way when the source was turned off.
+            if (AdoEnabled) HandlePollResult(result);
+        });
 
     private void OnNewPullRequestsDetected(List<PullRequestItem> prs)
         => Dispatcher.UIThread.Post(() =>
         {
-            if (!NotifyPullRequests) return;
+            if (!NotifyPullRequests || !AdoEnabled) return;
 
             if (prs.Count == 1)
             {
@@ -2088,7 +2225,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnNewBuildFailuresDetected(List<BuildItem> builds)
         => Dispatcher.UIThread.Post(() =>
         {
-            if (!NotifyBuilds) return;
+            if (!NotifyBuilds || !AdoEnabled) return;
 
             if (builds.Count == 1)
             {
@@ -2108,7 +2245,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnSentryAlertsDetected(SentryAlerts alerts)
         => Dispatcher.UIThread.Post(() =>
         {
-            if (!NotifyCrashes) return;
+            if (!NotifyCrashes || !SentryEnabled) return;
 
             if (alerts.Total == 1)
             {
@@ -2165,6 +2302,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnSentryPolled(List<SentryIssueItem> issues, bool isComplete)
         => Dispatcher.UIThread.Post(() =>
         {
+            if (!SentryEnabled) return;
             _lastSentryIssues = issues;
             _sentryLastPolled = DateTimeOffset.Now;
             RebuildSentryList();
@@ -2187,6 +2325,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnAppInsightsPolled(List<ServiceFinding> findings)
         => Dispatcher.UIThread.Post(() =>
         {
+            if (!AppInsightsEnabled) return;
             _lastFindings = findings;
             _serviceLastPolled = DateTimeOffset.Now;
             RebuildServiceGroups();
@@ -2203,6 +2342,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnAppInsightsSuppressed(List<IgnoredSubject> suppressed)
         => Dispatcher.UIThread.Post(() =>
         {
+            if (!AppInsightsEnabled) return;
             _lastSuppressed = suppressed;
             SuppressedCount = suppressed.Count;
 
@@ -2230,6 +2370,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnAppInsightsUnreadable(List<UnreadableResource> unreadable)
         => Dispatcher.UIThread.Post(() =>
         {
+            if (!AppInsightsEnabled) return;
             Sync(UnreadableResources, unreadable);
             UnreadableCount = unreadable.Count;
 
@@ -2264,7 +2405,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnNewServiceFindingsDetected(List<ServiceFinding> findings)
         => Dispatcher.UIThread.Post(() =>
         {
-            if (!NotifyServices) return;
+            if (!NotifyServices || !AppInsightsEnabled) return;
 
             if (findings.Count == 1)
             {
@@ -2283,19 +2424,25 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 "");
         });
 
+    /// <summary>The status line speaks for Azure DevOps alone, so it is quiet while that is off.</summary>
     private void OnStatusChanged(string msg)
-        => Dispatcher.UIThread.Post(() => StatusText = msg);
+        => Dispatcher.UIThread.Post(() =>
+        {
+            if (AdoEnabled) StatusText = msg;
+        });
 
     private void OnErrorOccurred(string msg)
         => Dispatcher.UIThread.Post(() =>
         {
+            // A poll already under way when Azure DevOps was turned off. Refresh stays available
+            // either way, since the other sources still answer it.
+            if (!AdoEnabled) return;
             StatusText = $"⚠ {msg}";
             AdoStatus.Set(
                 msg.Contains("auth", StringComparison.OrdinalIgnoreCase) || msg.Contains("PAT", StringComparison.Ordinal)
                     ? ConnectionState.AuthFailed
                     : ConnectionState.Error,
                 msg);
-            IsConnected = false;
         });
 
     /// <summary>Opens settings on the held-back list, for the link on the findings themselves.</summary>
@@ -2471,6 +2618,14 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
         // By id rather than by spelling: the snapshot the agent read may show a route in the
         // spelling it had a poll ago.
+        if (!AppInsightsEnabled)
+        {
+            InvestigationStore.Answer(id,
+                "Application Insights is turned off in Huginn's settings, so Huginn holds no service "
+                + "findings to drill into.");
+            return;
+        }
+
         ServiceFinding? finding = _lastFindings.FirstOrDefault(f =>
             f.Id == ServiceFinding.IdFor(f.AppId, f.Kind, subject)
             && (resource.Length == 0

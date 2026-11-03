@@ -1,3 +1,8 @@
+v.1.7.8
+   - New: each source can be turned off under Settings, with "Use Azure DevOps", "Use Sentry" and "Use Application Insights" at the top of its page. A source turned off is not checked, its pane is gone and the others share the width, and it raises no warning for a missing sign-in or token. Agents are told it is off rather than broken. All are on unless turned off.
+   - Fixed: when Azure DevOps had no token or could not sign in, Sentry and Application Insights were not checked either. Each source now starts on its own.
+   - Fixed: on macOS a second copy could still start, e.g. one launched from a terminal beside one launched from Finder. A second launch now finds the running copy however either was started.
+
 v.1.7.7
    - Fixed: on macOS the app menu and the About and Quit items called Huginn "Avalonia Application".
 

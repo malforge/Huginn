@@ -18,6 +18,16 @@ public sealed partial class ConnectionStatus : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsBusy))]
     private ConnectionState _state = ConnectionState.NotConfigured;
 
+    /// <summary>
+    /// Turned on in settings. A source turned off reports nothing and asks for nothing, whatever
+    /// state it was last left in.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Glyph))]
+    [NotifyPropertyChangedFor(nameof(StateText))]
+    [NotifyPropertyChangedFor(nameof(NeedsAttention))]
+    private bool _isEnabled = true;
+
     /// <summary>Detail replacing the default state text, e.g. an error from the server.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StateText))]
@@ -25,14 +35,14 @@ public sealed partial class ConnectionStatus : ObservableObject
 
     /// <summary>The user must do something before this source can report.</summary>
     public bool NeedsAttention =>
-        State is ConnectionState.NotConfigured or ConnectionState.AuthFailed or ConnectionState.Error;
+        IsEnabled && State is ConnectionState.NotConfigured or ConnectionState.AuthFailed or ConnectionState.Error;
 
     public bool IsConnected => State == ConnectionState.Connected;
 
     /// <summary>A check is in flight, so actions against this connection are disabled.</summary>
     public bool IsBusy => State == ConnectionState.Connecting;
 
-    public string Glyph => State switch
+    public string Glyph => !IsEnabled ? "⊘" : State switch
     {
         ConnectionState.Connected => "✅",
         ConnectionState.Connecting => "⋯",
@@ -41,7 +51,8 @@ public sealed partial class ConnectionStatus : ObservableObject
         _ => "○",
     };
 
-    public string StateText => !string.IsNullOrEmpty(Message)
+    public string StateText => !IsEnabled ? "Turned off"
+        : !string.IsNullOrEmpty(Message)
         ? Message
         : State switch
         {

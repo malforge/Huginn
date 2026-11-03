@@ -7,7 +7,7 @@ public sealed class AgentSource
 {
     public string Name { get; set; } = "";
 
-    /// <summary>Connected, AuthFailed, Error, Connecting or NotConfigured.</summary>
+    /// <summary>Connected, AuthFailed, Error, Connecting, NotConfigured, or Off when turned off in settings.</summary>
     public string State { get; set; } = "";
 
     public string Message { get; set; } = "";

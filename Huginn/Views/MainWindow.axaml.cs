@@ -59,10 +59,7 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainWindowViewModel vm) return;
 
-        // Three panes now, since pull requests and builds share one. Only 1 or 3: two columns
-        // would leave the third orphaned on a row of its own, which looks like a mistake.
-        var fits = (int)(Bounds.Width / PaneWidth);
-        vm.LayoutColumns = fits >= 3 ? 3 : 1;
+        vm.SetFittingColumns((int)(Bounds.Width / PaneWidth));
     }
 
     private void OnWindowDeactivated(object? sender, EventArgs e)
