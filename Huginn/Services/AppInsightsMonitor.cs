@@ -193,15 +193,17 @@ public sealed class AppInsightsMonitor
         //
         // Grouped by route rather than by name, so a route recorded by its ids is one finding, and
         // a route called in two spellings is not two findings that cannot be told apart. It is
-        // shown in the spelling recorded most, and named by its key, so a mute holds whichever
-        // spelling that turns out to be.
+        // shown in the spelling recorded most among those whose own key is the route's, so the
+        // name a finding shows always leads back to its requests, and a mute holds whichever
+        // spelling that turns out to be. A raw path folded into a routed name is never the one shown.
         QueryTable routes = await client.QueryAsync(component.AppId, $"""
-            let named = requests
-                | where timestamp > ago({window}){role}
-                | extend route = {RouteName.Template("name")}, key = {RouteName.Key("name")};
+            let named = materialize({RouteName.Requests(window, role)}
+                | extend route = {RouteName.Template("name")}, own = {RouteName.Key("name")});
             let spellings = named
-                | summarize calls = count() by key, route
-                | summarize arg_max(calls, route) by key
+                | summarize calls = count() by key, route, native = own == key
+                | order by key asc, native desc, calls desc, route asc
+                | extend n = row_number(1, prev(key) != key)
+                | where n == 1
                 | project key, name = route;
             named
             | summarize total = sum(itemCount),
@@ -653,12 +655,11 @@ public sealed class AppInsightsMonitor
         if (findings.Any(f => f.Kind is FindingKind.Latency or FindingKind.FailureRate))
         {
             QueryTable series = await client.QueryAsync(component.AppId, $"""
-                requests
-                | where timestamp > ago({window}){role}
+                {RouteName.Requests(window, role)}
                 | summarize p95 = round(percentile(duration, 95)),
                             failed = sumif(itemCount, success == false),
                             total = sum(itemCount)
-                          by name = {RouteName.Key("name")}, bin(timestamp, {bucket}m)
+                          by name = key, bin(timestamp, {bucket}m)
                 | order by timestamp asc
                 """, ct);
 

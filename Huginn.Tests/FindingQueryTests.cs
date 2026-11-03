@@ -19,7 +19,7 @@ public sealed class FindingQueryTests
         string query = FindingQuery.Portal(FailingRoute());
 
         Assert.StartsWith("requests", query.TrimStart());
-        Assert.Contains($"{RouteName.Key("name")} == {RouteName.KeyOf("GET /api/orders/load")}", query);
+        Assert.Contains($"key == {RouteName.KeyOf("GET /api/orders/load")}", query);
         Assert.Contains("success == false", query);
         Assert.Contains("kind=leftouter", query);
     }
@@ -58,6 +58,24 @@ public sealed class FindingQueryTests
         };
 
         Assert.All(FindingQuery.Explanations(finding),
-            d => Assert.Contains($"{RouteName.Key("name")} == {RouteName.KeyOf(finding.Subject)}", d.Kql));
+            d => Assert.Contains($"key == {RouteName.KeyOf(finding.Subject)}", d.Kql));
+    }
+
+    /// <summary>
+    /// A request rejected before routing is named by its raw path, apart from the routed name of
+    /// the same endpoint. Every route query reads requests keyed so both land on one route.
+    /// </summary>
+    [Fact]
+    public void Every_query_about_a_route_counts_the_requests_rejected_before_routing_with_it()
+    {
+        foreach (FindingKind kind in new[] { FindingKind.FailureRate, FindingKind.Latency })
+        {
+            ServiceFinding finding = new() { Kind = kind, Subject = "GET MobileHolidayLeave/CountMyEmployeesRequests", WindowMinutes = 720 };
+            string requests = RouteName.Requests("720m", "");
+
+            Assert.Contains(requests, FindingQuery.Evidence(finding));
+            Assert.Contains(requests, FindingQuery.Portal(finding));
+            Assert.All(FindingQuery.Explanations(finding), d => Assert.Contains(requests, d.Kql));
+        }
     }
 }

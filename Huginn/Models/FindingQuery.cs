@@ -24,6 +24,7 @@ public static class FindingQuery
         string subject = Literal(finding.Subject);
         string route = Route(finding);
         string role = Role(finding);
+        string requests = RouteName.Requests(window, role);
 
         return finding.Kind switch
         {
@@ -58,8 +59,7 @@ public static class FindingQuery
                 """,
 
             _ => $"""
-                requests
-                | where timestamp > ago({window}){role}
+                {requests}
                 | where {route}
                 | summarize calls = sum(itemCount),
                             failures = sumif(itemCount, success == false),
@@ -84,6 +84,7 @@ public static class FindingQuery
         string subject = Literal(finding.Subject);
         string route = Route(finding);
         string role = Role(finding);
+        string requests = RouteName.Requests(window, role);
 
         return finding.Kind switch
         {
@@ -92,9 +93,8 @@ public static class FindingQuery
             // opens on no results at all. leftouter keeps those. calls is how many requests
             // each recorded one stands for under sampling, so the rows add up to the card.
             FindingKind.FailureRate => $"""
-                requests
-                | where timestamp > ago({window}) and success == false{role}
-                | where {route}
+                {requests}
+                | where {route} and success == false
                 | project timestamp, resultCode, calls = itemCount, url, duration, operation_Id
                 | join kind=leftouter (
                       exceptions
@@ -122,8 +122,7 @@ public static class FindingQuery
                 """,
 
             FindingKind.Latency => $"""
-                requests
-                | where timestamp > ago({window}){role}
+                {requests}
                 | where {route}
                 | summarize calls = sum(itemCount),
                             p50 = round(percentile(duration, 50)),
@@ -157,14 +156,14 @@ public static class FindingQuery
         string subject = Literal(finding.Subject);
         string route = Route(finding);
         string role = Role(finding);
+        string requests = RouteName.Requests(window, role);
 
         return finding.Kind switch
         {
             FindingKind.Latency =>
             [
                 new Drilldown("How the latency moved through the window", $"""
-                    requests
-                    | where timestamp > ago({window}){role}
+                    {requests}
                     | where {route}
                     | summarize calls = sum(itemCount),
                                 p50 = round(percentile(duration, 50)),
@@ -216,15 +215,15 @@ public static class FindingQuery
             _ =>
             [
                 new Drilldown("Result codes", $"""
-                    requests
-                    | where timestamp > ago({window}) and {route}{role}
+                    {requests}
+                    | where {route}
                     | summarize calls = sum(itemCount) by resultCode
                     | order by calls desc
                     | take 10
                     """),
                 new Drilldown("The failures, and what they threw where they threw anything", $"""
-                    requests
-                    | where timestamp > ago({window}) and {route} and success == false{role}
+                    {requests}
+                    | where {route} and success == false
                     | project operation_Id, resultCode, itemCount
                     | join kind=leftouter (
                           exceptions
@@ -247,11 +246,12 @@ public static class FindingQuery
         $"{Math.Max(5, finding.WindowMinutes)}m";
 
     /// <summary>
-    /// Selects the requests of the finding's route, whichever of its names they were recorded
-    /// under. Only a route's subject is a template; a dependency's is never filtered by this.
+    /// Selects the requests of the finding's route from <see cref="RouteName.Requests"/>,
+    /// whichever of its names they were recorded under. Only a route's subject is a template; a
+    /// dependency's is never filtered by this.
     /// </summary>
     private static string Route(ServiceFinding finding) =>
-        $"{RouteName.Key("name")} == {RouteName.KeyOf(finding.Subject)}";
+        $"key == {RouteName.KeyOf(finding.Subject)}";
 
     /// <summary>
     /// The last exception of each operation, so a join on the operation matches a request once.
