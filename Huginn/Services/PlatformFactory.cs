@@ -49,9 +49,28 @@ public static class PlatformFactory
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return Create<ICredentialStore>("Huginn.Services.WinCredentialStore");
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return Create<ICredentialStore>("Huginn.Services.KeychainCredentialStore");
+            return new SecretVault(
+                Create<ICredentialStore>("Huginn.Services.KeychainCredentialStore"),
+                // Fixed rather than per profile, since every profile shares the one entry.
+                System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Huginn", "vault.lock"));
         return new FileCredentialStore();
     }
+
+    /// <summary>The one store this process keeps its secrets in, made on first use.</summary>
+    public static ICredentialStore CredentialStore => _credentialStore.Value;
+
+    private static readonly Lazy<ICredentialStore> _credentialStore = new(CreateCredentialStore);
+
+    /// <summary>
+    /// Where an Azure sign-in keeps its tokens. On macOS that is the same keychain entry as
+    /// everything else, so an update brings one question rather than one more per sign-in. Elsewhere
+    /// the library's own encrypted file, which asks nothing.
+    /// </summary>
+    public static Azure.Identity.TokenCachePersistenceOptions TokenCacheOptions(string name) =>
+        CredentialStore is SecretVault vault
+            ? new VaultTokenCacheOptions(vault, name)
+            : new Azure.Identity.TokenCachePersistenceOptions { Name = name };
 
 #if WINDOWS
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, "Huginn.Services.WinAutoStartService", "Huginn")]
@@ -137,7 +156,7 @@ public static class PlatformFactory
         private static void WarnOnce()
         {
             if (!_warned)
-                Log.Warn("Using plaintext FileCredentialStore fallback — credentials are NOT encrypted. Use Windows or macOS for secure storage.");
+                Log.Warn("Using plaintext FileCredentialStore fallback: credentials are NOT encrypted. Use Windows or macOS for secure storage.");
         }
     }
 

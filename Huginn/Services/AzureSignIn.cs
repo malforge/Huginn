@@ -64,7 +64,7 @@ public sealed class AzureSignIn
         {
             TenantId = _tenantId,
             ClientId = _clientId,
-            TokenCachePersistenceOptions = new TokenCachePersistenceOptions { Name = $"Huginn.{_slot}" },
+            TokenCachePersistenceOptions = PlatformFactory.TokenCacheOptions($"Huginn.{_slot}"),
             DisableAutomaticAuthentication = !allowPrompt,
             AdditionallyAllowedTenants = { "*" },
         };

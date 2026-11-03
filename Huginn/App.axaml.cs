@@ -30,7 +30,7 @@ public partial class App : Application
     public static void InitializeServices(SingleInstance? instance)
     {
         _instance = instance;
-        var credentials = PlatformFactory.CreateCredentialStore();
+        var credentials = PlatformFactory.CredentialStore;
         Settings = AppSettings.Load(credentials);
         Notifications = PlatformFactory.CreateNotificationService();
         Notifications.RegisterActivation();
